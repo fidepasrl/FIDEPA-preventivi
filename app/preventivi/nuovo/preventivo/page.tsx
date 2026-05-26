@@ -42,51 +42,51 @@ export default function PreventivoPage() {
     oggetto: "",
   });
 
-  const tutteLeLavorazioni: Lavorazione[] = [
-    { id: "fattibilita", nome: "Progetto di fattibilità", importo: 2500 },
-    { id: "definitivo", nome: "Progetto definitivo", importo: 6000 },
-    { id: "esecutivo", nome: "Progetto esecutivo", importo: 8500 },
-    { id: "dl", nome: "Direzione lavori", importo: 7500 },
-    { id: "csp", nome: "CSP", importo: 3500 },
-    { id: "cse", nome: "CSE", importo: 4500 },
-    { id: "ape", nome: "APE", importo: 250 },
-    { id: "diagnosi", nome: "Diagnosi energetica", importo: 1800 },
-    { id: "scia", nome: "SCIA/CILA", importo: 1200 },
-  ];
-
   const [lavorazioni, setLavorazioni] = useState<Lavorazione[]>([]);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const voci = params.get("voci")?.split(",").filter(Boolean) || [];
-    setVociSelezionate(voci);
+    async function caricaDatiPreventivo() {
+      const params = new URLSearchParams(window.location.search);
+      const voci = params.get("voci")?.split(",").filter(Boolean) || [];
+      setVociSelezionate(voci);
 
-    const lavorazioniFiltrate = tutteLeLavorazioni.filter((voce) =>
-      voci.includes(voce.id)
-    );
+      const { data, error } = await supabase
+        .from("lavorazioni")
+        .select("*")
+        .in("id", voci);
 
-    setLavorazioni(lavorazioniFiltrate);
+      if (!error && data) {
+        setLavorazioni(
+          data.map((voce: any) => ({
+            id: voce.id,
+            nome: voce.nome,
+            importo: Number(voce.importo),
+          }))
+        );
+      }
 
-    const datiCliente = localStorage.getItem("datiClientePreventivo");
+      const datiCliente = localStorage.getItem("datiClientePreventivo");
 
-    if (datiCliente) {
-      setCliente(JSON.parse(datiCliente));
+      if (datiCliente) {
+        setCliente(JSON.parse(datiCliente));
+      }
+
+      const anno = new Date().getFullYear().toString().slice(-2);
+      const chiaveProgressivo = `progressivoPreventivi_${anno}`;
+      const progressivoSalvato = localStorage.getItem(chiaveProgressivo);
+
+      const prossimoProgressivo = progressivoSalvato
+        ? Number(progressivoSalvato) + 1
+        : 1;
+
+      const numeroGenerato = `${anno}${prossimoProgressivo
+        .toString()
+        .padStart(3, "0")}`;
+
+      setNumeroPreventivo(numeroGenerato);
     }
 
-    const anno = new Date().getFullYear().toString().slice(-2);
-    const chiaveProgressivo = `progressivoPreventivi_${anno}`;
-    const progressivoSalvato = localStorage.getItem(chiaveProgressivo);
-
-    const prossimoProgressivo = progressivoSalvato
-      ? Number(progressivoSalvato) + 1
-      : 1;
-
-    const numeroGenerato = `${anno}${prossimoProgressivo
-      .toString()
-      .padStart(3, "0")}`;
-
-    setNumeroPreventivo(numeroGenerato);
-
+    caricaDatiPreventivo();
   }, []);
 
   function aggiornaImporto(id: string, nuovoImporto: string) {

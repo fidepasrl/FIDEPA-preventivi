@@ -75,19 +75,29 @@ export default function ArchivioPreventivi() {
     );
   }
 
-  function eliminaPreventivo(numero: string) {
+  async function eliminaPreventivo(numero: string) {
     const conferma = confirm(
       "Vuoi eliminare definitivamente questo preventivo dall'archivio?"
     );
 
     if (!conferma) return;
 
+    const { error } = await supabase
+      .from("preventivi")
+      .delete()
+      .eq("numero", numero);
+
+    if (error) {
+      console.error(error);
+      alert("Errore durante l'eliminazione del preventivo");
+      return;
+    }
+
     const nuovoArchivio = preventivi.filter(
       (preventivo) => preventivo.numero !== numero
     );
 
     setPreventivi(nuovoArchivio);
-    localStorage.setItem("archivioPreventivi", JSON.stringify(nuovoArchivio));
   }
 
   return (
