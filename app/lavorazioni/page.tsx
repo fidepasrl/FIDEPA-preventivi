@@ -135,13 +135,15 @@ export default function LavorazioniPage() {
       )
     );
     setTimeout(() => {
-        document
-            .getElementById(`categoria-${categoria}`)
-            ?.scrollIntoView({
-            behavior: "smooth",
-            block: "center",
-            });
-        }, 100);
+      document
+        .getElementById(
+          `categoria-${categorieRiordinate[nuovoIndex].nome}`
+        )
+        ?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+    }, 100);
   }
 
   function handleDragEnd(event: DragEndEvent) {
