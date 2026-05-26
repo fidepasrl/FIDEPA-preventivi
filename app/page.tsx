@@ -46,9 +46,12 @@ export default function Home() {
              + Nuovo Preventivo
             </a>
 
-            <button className="border-2 border-[#2B2E65] text-[#2B2E65] p-8 rounded-2xl text-2xl font-semibold hover:bg-gray-100 transition">
+            <a
+              href="/preventivi/archivio"
+              className="border-2 border-[#2B2E65] text-[#2B2E65] p-8 rounded-2xl text-2xl font-semibold hover:bg-gray-100 transition text-center"
+            >
               Archivio Preventivi
-            </button>
+            </a>
 
             <button className="border-2 border-[#2B2E65] text-[#2B2E65] p-8 rounded-2xl text-2xl font-semibold hover:bg-gray-100 transition">
               Clienti

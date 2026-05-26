@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { pdf } from "@react-pdf/renderer";
+import { saveAs } from "file-saver";
+import PreventivoPDF from "@/components/pdf/PreventivoPDF";
+import { supabase } from "@/lib/supabase";
 
 type Cliente = {
   cliente: string;
@@ -23,6 +27,8 @@ type Lavorazione = {
 export default function PreventivoPage() {
   const [vociSelezionate, setVociSelezionate] = useState<string[]>([]);
   const [modificaImporti, setModificaImporti] = useState(false);
+  const [sconto, setSconto] = useState("");
+  const [numeroPreventivo, setNumeroPreventivo] = useState("");
 
   const [cliente, setCliente] = useState<Cliente>({
     cliente: "",
@@ -66,6 +72,21 @@ export default function PreventivoPage() {
     if (datiCliente) {
       setCliente(JSON.parse(datiCliente));
     }
+
+    const anno = new Date().getFullYear().toString().slice(-2);
+    const chiaveProgressivo = `progressivoPreventivi_${anno}`;
+    const progressivoSalvato = localStorage.getItem(chiaveProgressivo);
+
+    const prossimoProgressivo = progressivoSalvato
+      ? Number(progressivoSalvato) + 1
+      : 1;
+
+    const numeroGenerato = `${anno}${prossimoProgressivo
+      .toString()
+      .padStart(3, "0")}`;
+
+    setNumeroPreventivo(numeroGenerato);
+
   }, []);
 
   function aggiornaImporto(id: string, nuovoImporto: string) {
@@ -76,6 +97,101 @@ export default function PreventivoPage() {
           : voce
       )
     );
+  }
+
+    async function anteprimaPDF() {
+      const blob = await pdf(
+        <PreventivoPDF
+          cliente={cliente}
+          lavorazioni={lavorazioni}
+          imponibile={imponibile}
+          cassa={cassa}
+          iva={iva}
+          sconto={scontoNumero}
+          totale={totale}
+          numeroPreventivo={numeroPreventivo}
+        />
+      ).toBlob();
+
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+    }
+
+    async function generaPDF() {
+      
+       const blob = await pdf(
+      <PreventivoPDF
+        cliente={cliente}
+        lavorazioni={lavorazioni}
+        imponibile={imponibile}
+        cassa={cassa}
+        iva={iva}
+        sconto={scontoNumero}
+        totale={totale}
+        numeroPreventivo={numeroPreventivo}
+      />
+    ).toBlob();
+
+      saveAs(
+        blob,
+        `Preventivo ${numeroPreventivo} - ${cliente.cliente}.pdf`
+      );
+    }
+
+  async function salvaEChiudi() {
+    const anno = new Date().getFullYear().toString().slice(-2);
+    const chiaveProgressivo = `progressivoPreventivi_${anno}`;
+
+    localStorage.setItem(
+      chiaveProgressivo,
+      numeroPreventivo.slice(2)
+    );
+
+    const { error } = await supabase
+      .from("preventivi")
+      .insert([
+        {
+          numero: numeroPreventivo,
+          data: new Date().toLocaleDateString("it-IT"),
+          cliente: cliente.cliente,
+          oggetto: cliente.oggetto,
+          imponibile,
+          cassa,
+          iva,
+          sconto: scontoNumero,
+          totale,
+          lavorazioni,
+        },
+      ]);
+
+    if (error) {
+      console.error(error);
+      alert("Errore nel salvataggio del preventivo");
+      return;
+    }
+
+    localStorage.removeItem("datiClientePreventivo");
+    localStorage.removeItem("lavorazioniSelezionate");
+
+    const blob = await pdf(
+      <PreventivoPDF
+        cliente={cliente}
+        lavorazioni={lavorazioni}
+        imponibile={imponibile}
+        cassa={cassa}
+        iva={iva}
+        sconto={scontoNumero}
+        totale={totale}
+        numeroPreventivo={numeroPreventivo}
+      />
+    ).toBlob();
+
+    saveAs(
+      blob,
+      `Preventivo ${numeroPreventivo} - ${cliente.cliente}.pdf`
+    );
+
+    window.location.href = "/";
   }
 
   function formatEuro(valore: number) {
@@ -92,7 +208,8 @@ export default function PreventivoPage() {
 
   const cassa = imponibile * 0.04;
   const iva = (imponibile + cassa) * 0.22;
-  const totale = imponibile + cassa + iva;
+  const scontoNumero = sconto === "" ? 0 : Number(sconto);
+  const totale = imponibile + cassa + iva - scontoNumero;
 
   return (
     <main className="min-h-screen bg-[#2B2E65] p-10 text-white">
@@ -239,6 +356,16 @@ export default function PreventivoPage() {
           </div>
 
           <div className="max-w-md ml-auto space-y-3">
+            <div className="flex justify-between items-center">
+              <span>Sconto</span>
+              <input
+                type="number"
+                value={sconto}
+                onChange={(e) => setSconto(e.target.value)}
+                placeholder="0,00"
+                className="border rounded-lg p-2 text-right w-32"
+              />
+            </div>
             <div className="flex justify-between">
               <span>Imponibile</span>
               <span>€ {formatEuro(imponibile)}</span>
@@ -277,10 +404,17 @@ export default function PreventivoPage() {
               </button>
 
               <button
-                onClick={() => window.print()}
+                onClick={anteprimaPDF}
                 className="px-6 py-3 rounded-xl bg-[#2B2E65] text-white font-semibold"
               >
-                Genera PDF
+                Anteprima PDF
+              </button>
+
+              <button
+                onClick={salvaEChiudi}
+                className="px-6 py-3 rounded-xl bg-green-700 text-white font-semibold"
+              >
+                Genera PDF e chiudi
               </button>
             </div>
           </div>

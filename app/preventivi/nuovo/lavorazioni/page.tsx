@@ -106,7 +106,10 @@ useEffect(() => {
                 </div>
 
                 <p className="font-bold whitespace-nowrap">
-                  € {voce.importo.toLocaleString("it-IT")}
+                  € {voce.importo.toLocaleString("it-IT", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})}
                 </p>
               </label>
             ))}
