@@ -134,16 +134,6 @@ export default function LavorazioniPage() {
         lav.id === id ? { ...lav, [campo]: valore } : lav
       )
     );
-    setTimeout(() => {
-      document
-        .getElementById(
-          `categoria-${categorieRiordinate[nuovoIndex].nome}`
-        )
-        ?.scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
-    }, 100);
   }
 
   function handleDragEnd(event: DragEndEvent) {
@@ -199,6 +189,15 @@ export default function LavorazioniPage() {
         categoria_ordine: ordinePerCategoria.get(lav.categoria) || 999,
       }))
     );
+
+    setTimeout(() => {
+      document
+        .getElementById(`categoria-${categoria}`)
+        ?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+    }, 100);
   }
 
   async function aggiungiCategoria() {
