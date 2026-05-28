@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -21,14 +22,29 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { supabase } from "@/lib/supabase";
 
+type MacroCategoria = "Progettazione" | "Realizzazione" | "Chiusura dei lavori";
+
+const MACROCATEGORIE: MacroCategoria[] = [
+  "Progettazione",
+  "Realizzazione",
+  "Chiusura dei lavori",
+];
+
 type Lavorazione = {
   id: string;
+  macrocategoria: MacroCategoria;
   categoria: string;
   nome: string;
   descrizione: string;
   importo: number;
   ordine: number;
   categoria_ordine: number;
+};
+
+type Categoria = {
+  nome: string;
+  macrocategoria: MacroCategoria;
+  ordine: number;
 };
 
 function RigaLavorazione({
@@ -44,6 +60,8 @@ function RigaLavorazione({
   ) => void;
   eliminaLavorazione: (id: string) => void;
 }) {
+  const [descrizioneAperta, setDescrizioneAperta] = useState(false);
+
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({ id: lav.id });
 
@@ -56,45 +74,63 @@ function RigaLavorazione({
     <div
       ref={setNodeRef}
       style={style}
-      className="grid grid-cols-12 gap-3 border rounded-xl p-4 items-center bg-white"
+      className="border rounded-xl p-4 bg-white"
     >
-      <button
-        {...attributes}
-        {...listeners}
-        className="col-span-1 cursor-grab active:cursor-grabbing rounded-lg border p-2 font-bold"
-        title="Trascina"
-      >
-        ☰
-      </button>
+      <div className="grid grid-cols-12 gap-3 items-center">
+        <button
+          {...attributes}
+          {...listeners}
+          className="col-span-1 cursor-grab active:cursor-grabbing rounded-lg border p-2 font-bold"
+          title="Trascina"
+        >
+          ☰
+        </button>
 
-      <input
-        value={lav.nome}
-        onChange={(e) => aggiornaCampo(lav.id, "nome", e.target.value)}
-        className="col-span-4 border rounded-lg p-2"
-      />
+        <div className="col-span-9 flex gap-2 items-center">
+          <input
+            value={lav.nome}
+            onChange={(e) => aggiornaCampo(lav.id, "nome", e.target.value)}
+            className="border rounded-lg p-2 flex-1"
+          />
 
-      <input
-        value={lav.descrizione}
-        onChange={(e) => aggiornaCampo(lav.id, "descrizione", e.target.value)}
-        className="col-span-5 border rounded-lg p-2"
-      />
+          <button
+            type="button"
+            onClick={() => setDescrizioneAperta((aperta) => !aperta)}
+            className="px-3 py-2 rounded-lg border font-semibold cursor-pointer"
+            title="Apri descrizione"
+          >
+            {descrizioneAperta ? "−" : "Descr."}
+          </button>
+        </div>
 
-      <input
-        type="number"
-        value={lav.importo}
-        onChange={(e) =>
-          aggiornaCampo(lav.id, "importo", Number(e.target.value))
-        }
-        className="col-span-1 border rounded-lg p-2 text-right"
-      />
+        <input
+          type="number"
+          value={lav.importo}
+          onChange={(e) =>
+            aggiornaCampo(lav.id, "importo", Number(e.target.value))
+          }
+          className="col-span-1 border rounded-lg p-2 text-right"
+        />
 
-      <button
-        onClick={() => eliminaLavorazione(lav.id)}
-        className="col-span-1 bg-red-700 text-white rounded-lg p-2 flex items-center justify-center text-xl cursor-pointer"
-        title="Elimina lavorazione"
-      >
-        🗑
-      </button>
+        <button
+          onClick={() => eliminaLavorazione(lav.id)}
+          className="col-span-1 bg-red-700 text-white rounded-lg p-2 flex items-center justify-center text-xl cursor-pointer"
+          title="Elimina lavorazione"
+        >
+          🗑
+        </button>
+      </div>
+
+      {descrizioneAperta && (
+        <textarea
+          value={lav.descrizione}
+          onChange={(e) =>
+            aggiornaCampo(lav.id, "descrizione", e.target.value)
+          }
+          className="mt-3 w-full border rounded-lg p-3 min-h-24"
+          placeholder="Descrizione della lavorazione"
+        />
+      )}
     </div>
   );
 }
@@ -113,12 +149,18 @@ export default function LavorazioniPage() {
     const { data, error } = await supabase
       .from("lavorazioni")
       .select("*")
+      .order("macrocategoria")
       .order("categoria_ordine")
       .order("categoria")
       .order("ordine");
 
     if (!error && data) {
-      setLavorazioni(data);
+      setLavorazioni(
+        data.map((lav) => ({
+          ...lav,
+          macrocategoria: lav.macrocategoria || "Progettazione",
+        }))
+      );
     }
 
     setLoading(false);
@@ -141,76 +183,101 @@ export default function LavorazioniPage() {
 
     if (!over || active.id === over.id) return;
 
-    const oldIndex = lavorazioni.findIndex((lav) => lav.id === active.id);
-    const newIndex = lavorazioni.findIndex((lav) => lav.id === over.id);
+    const activeLav = lavorazioni.find((lav) => lav.id === active.id);
+    const overLav = lavorazioni.find((lav) => lav.id === over.id);
 
-    const nuovaLista = arrayMove(lavorazioni, oldIndex, newIndex).map(
+    if (!activeLav || !overLav) return;
+
+    // Per ora il drag riordina solo lavorazioni dentro la stessa categoria.
+    if (activeLav.categoria !== overLav.categoria) return;
+
+    const lavorazioniCategoria = lavorazioni
+      .filter((lav) => lav.categoria === activeLav.categoria)
+      .sort((a, b) => a.ordine - b.ordine);
+
+    const oldIndex = lavorazioniCategoria.findIndex((lav) => lav.id === active.id);
+    const newIndex = lavorazioniCategoria.findIndex((lav) => lav.id === over.id);
+
+    const riordinate = arrayMove(lavorazioniCategoria, oldIndex, newIndex).map(
       (lav, index) => ({
         ...lav,
         ordine: index + 1,
       })
     );
 
-    setLavorazioni(nuovaLista);
-  }
-
-  function spostaCategoria(categoria: string, direzione: "su" | "giu") {
-    const categorie = Array.from(
-      new Map(
-        lavorazioni.map((lav) => [
-          lav.categoria,
-          {
-            nome: lav.categoria,
-            ordine: lav.categoria_ordine ?? 0,
-          },
-        ])
-      ).values()
-    ).sort((a, b) => a.ordine - b.ordine || a.nome.localeCompare(b.nome));
-
-    const index = categorie.findIndex((cat) => cat.nome === categoria);
-    const nuovoIndex = direzione === "su" ? index - 1 : index + 1;
-
-    if (nuovoIndex < 0 || nuovoIndex >= categorie.length) return;
-
-    const categorieRiordinate = [...categorie];
-
-    const temp = categorieRiordinate[index];
-
-    categorieRiordinate[index] = categorieRiordinate[nuovoIndex];
-    categorieRiordinate[nuovoIndex] = temp;
-
-    const ordinePerCategoria = new Map(
-      categorieRiordinate.map((cat, idx) => [cat.nome, idx + 1])
-    );
+    const ordinePerId = new Map(riordinate.map((lav) => [lav.id, lav.ordine]));
 
     setLavorazioni((correnti) =>
       correnti.map((lav) => ({
         ...lav,
-        categoria_ordine: ordinePerCategoria.get(lav.categoria) || 999,
+        ordine: ordinePerId.get(lav.id) ?? lav.ordine,
       }))
     );
-
-    setTimeout(() => {
-      document
-        .getElementById(`categoria-${categoria}`)
-        ?.scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
-    }, 100);
   }
 
-  async function aggiungiCategoria() {
+  function categoriePerMacro(macrocategoria: MacroCategoria): Categoria[] {
+    return Array.from(
+      new Map(
+        lavorazioni
+          .filter((lav) => lav.macrocategoria === macrocategoria)
+          .map((lav) => [
+            lav.categoria,
+            {
+              nome: lav.categoria,
+              macrocategoria: lav.macrocategoria,
+              ordine: lav.categoria_ordine ?? 0,
+            },
+          ])
+      ).values()
+    ).sort((a, b) => a.ordine - b.ordine || a.nome.localeCompare(b.nome));
+  }
+
+  function rinominaCategoria(vecchioNome: string, nuovoNome: string) {
+    setLavorazioni((correnti) =>
+      correnti.map((lav) =>
+        lav.categoria === vecchioNome ? { ...lav, categoria: nuovoNome } : lav
+      )
+    );
+  }
+
+  function cambiaMacroCategoria(
+    categoria: string,
+    nuovaMacroCategoria: MacroCategoria
+  ) {
+    const massimoOrdineNuovaMacro = Math.max(
+      0,
+      ...lavorazioni
+        .filter((lav) => lav.macrocategoria === nuovaMacroCategoria)
+        .map((lav) => lav.categoria_ordine || 0)
+    );
+
+    setLavorazioni((correnti) =>
+      correnti.map((lav) =>
+        lav.categoria === categoria
+          ? {
+              ...lav,
+              macrocategoria: nuovaMacroCategoria,
+              categoria_ordine: massimoOrdineNuovaMacro + 1,
+            }
+          : lav
+      )
+    );
+  }
+
+  async function aggiungiCategoria(macrocategoria: MacroCategoria) {
     const nuovaCategoria = prompt("Nome nuova categoria:");
 
     if (!nuovaCategoria) return;
 
     const massimoOrdine = Math.max(
       0,
-      ...lavorazioni.map((lav) => lav.categoria_ordine || 0)
+      ...lavorazioni
+        .filter((lav) => lav.macrocategoria === macrocategoria)
+        .map((lav) => lav.categoria_ordine || 0)
     );
 
     const nuova = {
+      macrocategoria,
       categoria: nuovaCategoria,
       categoria_ordine: massimoOrdine + 1,
       nome: "Nuova lavorazione",
@@ -246,19 +313,7 @@ export default function LavorazioniPage() {
       return;
     }
 
-    setLavorazioni(
-      lavorazioni.filter((lav) => lav.categoria !== categoria)
-    );
-  }
-
-  function rinominaCategoria(vecchioNome: string, nuovoNome: string) {
-    setLavorazioni((correnti) =>
-      correnti.map((lav) =>
-        lav.categoria === vecchioNome
-          ? { ...lav, categoria: nuovoNome }
-          : lav
-      )
-    );
+    setLavorazioni(lavorazioni.filter((lav) => lav.categoria !== categoria));
   }
 
   async function salvaModifiche() {
@@ -266,6 +321,7 @@ export default function LavorazioniPage() {
       await supabase
         .from("lavorazioni")
         .update({
+          macrocategoria: lavorazione.macrocategoria,
           categoria: lavorazione.categoria,
           nome: lavorazione.nome,
           descrizione: lavorazione.descrizione,
@@ -281,18 +337,18 @@ export default function LavorazioniPage() {
   }
 
   async function aggiungiLavorazione(categoria: string) {
-    const ordineCategoria =
-      lavorazioni.find((lav) => lav.categoria === categoria)
-        ?.categoria_ordine || 0;
+    const categoriaBase = lavorazioni.find((lav) => lav.categoria === categoria);
+
+    if (!categoriaBase) return;
 
     const nuova = {
+      macrocategoria: categoriaBase.macrocategoria,
       categoria,
-      categoria_ordine: ordineCategoria,
+      categoria_ordine: categoriaBase.categoria_ordine || 0,
       nome: "Nuova lavorazione",
       descrizione: "",
       importo: 0,
-      ordine:
-        lavorazioni.filter((lav) => lav.categoria === categoria).length + 1,
+      ordine: lavorazioni.filter((lav) => lav.categoria === categoria).length + 1,
     };
 
     const { data, error } = await supabase
@@ -314,18 +370,6 @@ export default function LavorazioniPage() {
 
     setLavorazioni(lavorazioni.filter((lav) => lav.id !== id));
   }
-
-  const categorie = Array.from(
-    new Map(
-      lavorazioni.map((lav) => [
-        lav.categoria,
-        {
-          nome: lav.categoria,
-          ordine: lav.categoria_ordine ?? 0,
-        },
-      ])
-    ).values()
-  ).sort((a, b) => a.ordine - b.ordine || a.nome.localeCompare(b.nome));
 
   if (loading) {
     return (
@@ -358,13 +402,6 @@ export default function LavorazioniPage() {
             </a>
 
             <button
-              onClick={aggiungiCategoria}
-              className="px-5 py-3 rounded-xl bg-white text-[#2B2E65] font-semibold cursor-pointer"
-            >
-              Aggiungi categoria
-            </button>
-
-            <button
               onClick={salvaModifiche}
               className="px-5 py-3 rounded-xl bg-green-700 text-white font-semibold cursor-pointer"
             >
@@ -373,79 +410,111 @@ export default function LavorazioniPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-3xl p-8 text-[#2B2E65]">
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={lavorazioni.map((lav) => lav.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              {categorie.map((categoria, index) => (
-                    <div
+        <div className="space-y-8">
+          {MACROCATEGORIE.map((macrocategoria) => {
+            const categorie = categoriePerMacro(macrocategoria);
+
+            return (
+              <section
+                key={macrocategoria}
+                className="bg-white rounded-3xl p-8 text-[#2B2E65]"
+              >
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-3xl font-bold">{macrocategoria}</h2>
+
+                  <button
+                    onClick={() => aggiungiCategoria(macrocategoria)}
+                    className="px-5 py-3 rounded-xl bg-[#2B2E65] text-white font-semibold cursor-pointer"
+                  >
+                    Aggiungi categoria
+                  </button>
+                </div>
+
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext
+                    items={lavorazioni
+                      .filter((lav) => lav.macrocategoria === macrocategoria)
+                      .map((lav) => lav.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {categorie.length === 0 && (
+                      <p className="text-sm opacity-70">
+                        Nessuna categoria presente in questa macrocategoria.
+                      </p>
+                    )}
+
+                    {categorie.map((categoria) => (
+                      <div
                         id={`categoria-${categoria.nome}`}
                         key={`categoria-${categoria.nome}`}
-                        className="mb-12"
-                    >
-                  <div className="flex items-center gap-3 mb-4">
-                    <button
-                      onClick={() => spostaCategoria(categoria.nome, "su")}
-                      disabled={index === 0}
-                      className="px-3 py-2 rounded-lg border disabled:opacity-30 cursor-pointer"
-                    >
-                      ↑
-                    </button>
+                        className="mb-12 last:mb-0"
+                      >
+                        <div className="flex items-center gap-3 mb-4">
+                          <input
+                            value={categoria.nome}
+                            onChange={(e) =>
+                              rinominaCategoria(categoria.nome, e.target.value)
+                            }
+                            className="text-2xl font-bold border rounded-lg p-2 flex-1"
+                          />
 
-                    <button
-                      onClick={() => spostaCategoria(categoria.nome, "giu")}
-                      disabled={index === categorie.length - 1}
-                      className="px-3 py-2 rounded-lg border disabled:opacity-30 cursor-pointer"
-                    >
-                      ↓
-                    </button>
+                          <select
+                            value={categoria.macrocategoria}
+                            onChange={(e) =>
+                              cambiaMacroCategoria(
+                                categoria.nome,
+                                e.target.value as MacroCategoria
+                              )
+                            }
+                            className="border rounded-lg p-2"
+                          >
+                            {MACROCATEGORIE.map((macro) => (
+                              <option key={macro} value={macro}>
+                                {macro}
+                              </option>
+                            ))}
+                          </select>
 
-                    <input
-                      value={categoria.nome}
-                      onChange={(e) =>
-                        rinominaCategoria(categoria.nome, e.target.value)
-                      }
-                      className="text-2xl font-bold border rounded-lg p-2 flex-1"
-                    />
+                          <button
+                            onClick={() => aggiungiLavorazione(categoria.nome)}
+                            className="px-4 py-2 rounded-lg bg-[#2B2E65] text-white font-bold cursor-pointer"
+                            title="Aggiungi lavorazione"
+                          >
+                            +
+                          </button>
 
-                    <button
-                      onClick={() => aggiungiLavorazione(categoria.nome)}
-                      className="px-4 py-2 rounded-lg bg-[#2B2E65] text-white font-bold cursor-pointer"
-                      title="Aggiungi lavorazione"
-                    >
-                      +
-                    </button>
+                          <button
+                            onClick={() => eliminaCategoria(categoria.nome)}
+                            className="px-4 py-2 rounded-lg bg-red-700 text-white font-semibold cursor-pointer"
+                          >
+                            Elimina categoria
+                          </button>
+                        </div>
 
-                    <button
-                      onClick={() => eliminaCategoria(categoria.nome)}
-                      className="px-4 py-2 rounded-lg bg-red-700 text-white font-semibold cursor-pointer"
-                    >
-                      Elimina categoria
-                    </button>
-                  </div>
-
-                  <div className="space-y-3">
-                    {lavorazioni
-                      .filter((lav) => lav.categoria === categoria.nome)
-                      .map((lav) => (
-                        <RigaLavorazione
-                            key={lav.id}
-                            lav={lav}
-                            aggiornaCampo={aggiornaCampo}
-                            eliminaLavorazione={eliminaLavorazione}
-                            />
-                      ))}
-                  </div>
-                </div>
-              ))}
-            </SortableContext>
-          </DndContext>
+                        <div className="space-y-3">
+                          {lavorazioni
+                            .filter((lav) => lav.categoria === categoria.nome)
+                            .sort((a, b) => a.ordine - b.ordine)
+                            .map((lav) => (
+                              <RigaLavorazione
+                                key={lav.id}
+                                lav={lav}
+                                aggiornaCampo={aggiornaCampo}
+                                eliminaLavorazione={eliminaLavorazione}
+                              />
+                            ))}
+                        </div>
+                      </div>
+                    ))}
+                  </SortableContext>
+                </DndContext>
+              </section>
+            );
+          })}
         </div>
       </div>
     </main>

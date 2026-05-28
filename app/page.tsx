@@ -61,7 +61,7 @@ export default function Home() {
               href="/lavorazioni"
               className="border-2 border-[#2B2E65] text-[#2B2E65] p-8 rounded-2xl text-2xl font-semibold hover:bg-gray-100 transition text-center"
             >
-              Lavorazioni
+              Modifica Lavorazioni
             </a>
 
           </div>

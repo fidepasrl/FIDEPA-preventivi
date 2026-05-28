@@ -5,13 +5,20 @@ import { supabase } from "@/lib/supabase";
 
 type Lavorazione = {
   id: string;
+  macrocategoria: string | null;
   categoria: string;
+  categoria_ordine: number | null;
   nome: string;
-  descrizione: string;
+  descrizione: string | null;
   importo: number;
-  ordine: number;
-  categoria_ordine: number;
+  ordine: number | null;
 };
+
+const MACROCATEGORIE = [
+  "Progettazione",
+  "Realizzazione",
+  "Chiusura dei lavori",
+];
 
 export default function LavorazioniPreventivo() {
   const [lavorazioni, setLavorazioni] = useState<Lavorazione[]>([]);
@@ -32,14 +39,18 @@ export default function LavorazioniPreventivo() {
     const { data, error } = await supabase
       .from("lavorazioni")
       .select("*")
+      .order("macrocategoria")
       .order("categoria_ordine")
       .order("categoria")
       .order("ordine");
 
-    if (!error && data) {
-      setLavorazioni(data);
+    if (error) {
+      console.error("Errore caricamento lavorazioni:", error);
+      setLoading(false);
+      return;
     }
 
+    setLavorazioni(data ?? []);
     setLoading(false);
   }
 
@@ -59,17 +70,22 @@ export default function LavorazioniPreventivo() {
     );
   }
 
-  const categorie = Array.from(
-    new Map(
-      lavorazioni.map((lav) => [
-        lav.categoria,
-        {
-          nome: lav.categoria,
-          ordine: lav.categoria_ordine ?? 0,
-        },
-      ])
-    ).values()
-  ).sort((a, b) => a.ordine - b.ordine || a.nome.localeCompare(b.nome));
+  const macrocategoriePresenti = Array.from(
+    new Set(
+      lavorazioni.map(
+        (lav) => lav.macrocategoria || "Senza macrocategoria"
+      )
+    )
+  );
+
+  const macrocategorieOrdinate = [
+    ...MACROCATEGORIE.filter((macro) =>
+      macrocategoriePresenti.includes(macro)
+    ),
+    ...macrocategoriePresenti
+      .filter((macro) => !MACROCATEGORIE.includes(macro))
+      .sort((a, b) => a.localeCompare(b)),
+  ];
 
   const urlPreventivo = `/preventivi/nuovo/preventivo?voci=${selezionate.join(
     ","
@@ -92,12 +108,10 @@ export default function LavorazioniPreventivo() {
               FIDEPA Preventivi - Versione 1.0
             </p>
 
-            <h1 className="text-4xl font-bold mt-2">
-              Nuovo Preventivo
-            </h1>
+            <h1 className="text-4xl font-bold mt-2">Nuovo Preventivo</h1>
 
             <p className="opacity-80 mt-2">
-              Step 2 di 2 — Selezione lavorazioni
+              Step 2 di 3 — Selezione lavorazioni
             </p>
           </div>
 
@@ -122,50 +136,101 @@ export default function LavorazioniPreventivo() {
         <div className="bg-white text-[#2B2E65] rounded-3xl shadow-2xl p-8">
           <h2 className="text-2xl font-bold mb-6">Lavorazioni</h2>
 
-          <div className="space-y-8">
-            {categorie.map((categoria) => (
-              <div key={categoria.nome}>
-                <h3 className="text-xl font-bold mb-4 border-b pb-2">
-                  {categoria.nome}
-                </h3>
+          {lavorazioni.length === 0 ? (
+            <p className="opacity-70">Nessuna lavorazione trovata.</p>
+          ) : (
+            <div className="space-y-12">
+              {macrocategorieOrdinate.map((macro) => {
+                const lavorazioniMacro = lavorazioni.filter(
+                  (lav) =>
+                    (lav.macrocategoria || "Senza macrocategoria") === macro
+                );
 
-                <div className="space-y-3">
-                  {lavorazioni
-                    .filter((voce) => voce.categoria === categoria.nome)
-                    .map((voce) => (
-                      <label
-                        key={voce.id}
-                        className="flex items-center justify-between gap-4 border border-[#2B2E65]/30 rounded-2xl p-4 cursor-pointer hover:bg-gray-50"
-                      >
-                        <div className="flex items-center gap-4">
-                          <input
-                            type="checkbox"
-                            checked={selezionate.includes(voce.id)}
-                            onChange={() => toggleLavorazione(voce.id)}
-                            className="w-6 h-6 accent-[#2B2E65]"
-                          />
+                const categorie = Array.from(
+                  new Map(
+                    lavorazioniMacro.map((lav) => [
+                      lav.categoria,
+                      {
+                        nome: lav.categoria,
+                        ordine: lav.categoria_ordine ?? 9999,
+                      },
+                    ])
+                  ).values()
+                ).sort(
+                  (a, b) =>
+                    a.ordine - b.ordine || a.nome.localeCompare(b.nome)
+                );
 
-                          <div>
-                            <p className="font-bold">{voce.nome}</p>
-                            <p className="text-sm opacity-70">
-                              {voce.descrizione}
-                            </p>
+                return (
+                  <section key={macro} className="space-y-8">
+                    <div>
+                      <h2 className="text-2xl font-bold">{macro}</h2>
+                      <div className="border-b-2 border-[#2B2E65] mt-2" />
+                    </div>
+
+                    {categorie.map((categoria) => {
+                      const vociCategoria = lavorazioniMacro
+                        .filter((voce) => voce.categoria === categoria.nome)
+                        .sort(
+                          (a, b) =>
+                            (a.ordine ?? 9999) - (b.ordine ?? 9999) ||
+                            a.nome.localeCompare(b.nome)
+                        );
+
+                      return (
+                        <div key={categoria.nome}>
+                          <h3 className="text-xl font-bold mb-4 border-b pb-2">
+                            {categoria.nome}
+                          </h3>
+
+                          <div className="space-y-3">
+                            {vociCategoria.map((voce) => (
+                              <label
+                                key={voce.id}
+                                className="flex items-center justify-between gap-4 border border-[#2B2E65]/30 rounded-2xl p-4 cursor-pointer hover:bg-gray-50"
+                              >
+                                <div className="flex items-center gap-4">
+                                  <input
+                                    type="checkbox"
+                                    checked={selezionate.includes(voce.id)}
+                                    onChange={() => toggleLavorazione(voce.id)}
+                                    className="w-5 h-5"
+                                  />
+
+                                  <div>
+                                    <p className="font-semibold">
+                                      {voce.nome}
+                                    </p>
+
+                                    {voce.descrizione && (
+                                      <p className="text-sm opacity-70 mt-1">
+                                        {voce.descrizione}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <p className="font-semibold whitespace-nowrap">
+                                  €{" "}
+                                  {Number(voce.importo).toLocaleString(
+                                    "it-IT",
+                                    {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    }
+                                  )}
+                                </p>
+                              </label>
+                            ))}
                           </div>
                         </div>
-
-                        <p className="font-bold whitespace-nowrap">
-                          €{" "}
-                          {Number(voce.importo).toLocaleString("it-IT", {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
-                        </p>
-                      </label>
-                    ))}
-                </div>
-              </div>
-            ))}
-          </div>
+                      );
+                    })}
+                  </section>
+                );
+              })}
+            </div>
+          )}
 
           <div className="flex justify-between mt-10">
             <a
