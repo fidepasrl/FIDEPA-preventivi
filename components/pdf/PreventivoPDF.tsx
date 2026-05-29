@@ -359,7 +359,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginLeft: 26,
     height: 52,
-    overflow: "visible",
     border: "1 solid #E3E7EF",
   },
 
