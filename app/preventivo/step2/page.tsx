@@ -234,14 +234,14 @@ export default function LavorazioniPreventivo() {
 
           <div className="flex justify-between mt-10">
             <a
-              href="/preventivi/nuovo"
+              href="/preventivo/step1"
               className="px-6 py-3 rounded-xl border border-[#2B2E65]"
             >
               Indietro
             </a>
 
             <a
-              href={urlPreventivo}
+              href="/preventivo/step3"
               className="px-6 py-3 rounded-xl bg-[#2B2E65] text-white font-semibold"
             >
               Genera Preventivo
