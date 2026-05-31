@@ -52,25 +52,23 @@ const styles = StyleSheet.create({
 
   coverBadgesBox: {
     position: "absolute",
-    top: 24,
-    right: 28,
-    width: 165,
-    minHeight: 165,
+    top: 28,
+    right: 35,
+    width: 105,
     backgroundColor: "#FFFFFF",
     borderRadius: 10,
-    paddingTop: 14,
-    paddingLeft: 18,
-    paddingRight: 10,
-    paddingBottom: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
     border: "1 solid #E2E4EA",
-    alignItems: "flex-start",
+    alignItems: "center",
   },
 
   coverBadge: {
-    width: 92,
-    height: 42,
+    width: 60,
+    height: 35,
     objectFit: "contain",
-    marginBottom: 10,
+    marginBottom: 8,
+    alignSelf: "center",
   },
 
   coverTitle: {
@@ -357,22 +355,22 @@ const styles = StyleSheet.create({
     backgroundColor: "#F5F7FB",
     borderRadius: 14,
     marginBottom: 8,
-    marginLeft: 26,
-    height: 52,
+    marginLeft: 23,
+    height: 46,
     border: "1 solid #E3E7EF",
   },
 
   paymentIcon: {
-    width: 52,
-    height: 52,
+    width: 46,
+    height: 46,
     objectFit: "contain",
   },
 
   paymentIconContainer: {
     position: "absolute",
-    left: -20,
-    width: 52,
-    height: 52,
+    left: -23,
+    width: 46,
+    height: 46,
     alignItems: "center",
     justifyContent: "center",
     zIndex: 10,
@@ -407,7 +405,7 @@ const styles = StyleSheet.create({
   },
 
   paymentPercent: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: "bold",
     marginBottom: 4,
   },
