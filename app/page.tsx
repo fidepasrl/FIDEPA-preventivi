@@ -1,71 +1,25 @@
+import LayoutApp from "@/components/LayoutApp";
+
 export default function Home() {
-  const today = new Date().toLocaleDateString("it-IT");
-
   return (
-    <main className="min-h-screen bg-[#2B2E65] p-10">
-      <div className="max-w-6xl mx-auto">
+    <LayoutApp>
+      <div className="relative flex flex-col items-center justify-center h-[75vh] overflow-hidden">
+        <img
+          src="/fidepa.png"
+          alt="FIDEPA"
+          className="absolute inset-0 m-auto h-[30%] opacity-60"
+        />
 
-        {/* HEADER */}
+        <div className="relative z-10 flex flex-col items-center">
+          <p className="text-[13px] uppercase tracking-[0.3em] text-gray-400">
+            Work in Progress
+          </p>
 
-        <div className="flex justify-between items-center mb-10">
-          <div>
-            <h1 className="text-5xl font-bold text-white">
-              FIDEPA Preventivi
-            </h1>
-
-            <p className="text-white/70 mt-2 text-lg">
-              Gestionale interno per la creazione dei preventivi
-            </p>
-          </div>
-
-          <div className="text-right text-white">
-            <p className="text-sm opacity-70">
-              Versione 1.0
-            </p>
-
-            <p className="text-lg font-semibold">
-              {today}
-            </p>
-          </div>
+          <h1 className="mt-3 text-4xl font-light text-[#2B2F5E]">
+            Stay Tuned
+          </h1>
         </div>
-
-        {/* CARD PRINCIPALE */}
-
-        <div className="bg-white rounded-3xl shadow-2xl p-10">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-            <a
-              href="/preventivo/step1"
-              className="bg-[#2B2E65] text-white p-8 rounded-2xl text-2xl font-semibold hover:scale-[1.02] transition text-center"
-            >
-              + Nuovo Preventivo
-            </a>
-
-            <a
-              href="/archivio"
-              className="border-2 border-[#2B2E65] text-[#2B2E65] p-8 rounded-2xl text-2xl font-semibold hover:bg-gray-100 transition text-center"
-            >
-              Archivio Preventivi
-            </a>
-
-            <a
-              href="/rubrica"
-              className="border-2 border-[#2B2E65] text-[#2B2E65] p-8 rounded-2xl text-2xl font-semibold hover:bg-gray-100 transition text-center"
-            >
-              Rubrica
-            </a>
-
-            <a
-              href="/lavorazioni"
-              className="border-2 border-[#2B2E65] text-[#2B2E65] p-8 rounded-2xl text-2xl font-semibold hover:bg-gray-100 transition text-center"
-            >
-              Modifica Lavorazioni
-            </a>
-
-          </div>
-        </div>
-
       </div>
-    </main>
+    </LayoutApp>
   );
 }
