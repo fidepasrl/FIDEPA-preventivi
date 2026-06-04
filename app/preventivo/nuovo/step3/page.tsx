@@ -236,23 +236,23 @@ export default function PreventivoStep3Page() {
     0
   );
 
-  const cassa = imponibile * 0.04;
-  const iva = (imponibile + cassa) * 0.22;
-
   const scontoPercentualeNumero =
     scontoPercentuale === "" ? 0 : Number(scontoPercentuale);
 
   const scontoImportoNumero =
     scontoImporto === "" ? 0 : Number(scontoImporto);
 
-  const totalePrimaDelloSconto = imponibile + cassa + iva;
-
-  const scontoDaPercentuale =
-    totalePrimaDelloSconto * (scontoPercentualeNumero / 100);
+  const scontoDaPercentuale = imponibile * (scontoPercentualeNumero / 100);
 
   const scontoNumero = scontoDaPercentuale + scontoImportoNumero;
 
-  const totale = totalePrimaDelloSconto - scontoNumero;
+  const imponibileScontato = Math.max(imponibile - scontoNumero, 0);
+
+  const cassa = imponibileScontato * 0.04;
+
+  const iva = (imponibileScontato + cassa) * 0.22;
+
+  const totale = imponibileScontato + cassa + iva;
 
   const totalePercentualePagamento =
     pagamento.anticipo +
@@ -452,6 +452,22 @@ export default function PreventivoStep3Page() {
 
           <Card title="Riepilogo economico">
             <RigaTotale label="Imponibile" value={`€ ${formatEuro(imponibile)}`} />
+
+            {scontoNumero > 0 && (
+              <>
+                <RigaTotale
+                  label="Sconto applicato sull'imponibile"
+                  value={`- € ${formatEuro(scontoNumero)}`}
+                  danger
+                />
+
+                <RigaTotale
+                  label="Imponibile scontato"
+                  value={`€ ${formatEuro(imponibileScontato)}`}
+                />
+              </>
+            )}
+
             <RigaTotale label="Cassa 4%" value={`€ ${formatEuro(cassa)}`} />
             <RigaTotale label="IVA 22%" value={`€ ${formatEuro(iva)}`} />
 
@@ -472,14 +488,6 @@ export default function PreventivoStep3Page() {
                 />
               </div>
             </div>
-
-            {scontoNumero > 0 && (
-              <RigaTotale
-                label="Sconto applicato"
-                value={`- € ${formatEuro(scontoNumero)}`}
-                danger
-              />
-            )}
 
             <div className="md:col-span-2 border-t border-gray-200 pt-4 mt-2">
               <div className="flex justify-between items-center">

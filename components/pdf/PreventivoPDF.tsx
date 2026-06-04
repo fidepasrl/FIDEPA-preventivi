@@ -307,7 +307,7 @@ const styles = StyleSheet.create({
   },
 
   totalsBox: {
-    flex: 1,
+    flex: 4,
     border: "1 solid #D8DCE8",
     borderRadius: 8,
     padding: 12,
@@ -321,6 +321,7 @@ const styles = StyleSheet.create({
   },
 
   grandTotalBox: {
+    flex: 6,
     position: "relative",
     width: 210,
     backgroundColor: BLUE,
@@ -346,6 +347,25 @@ const styles = StyleSheet.create({
 
   grandTotalValue: {
     fontSize: 22,
+    fontWeight: "bold",
+  },
+
+  grandTotalSmallRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    fontSize: 8,
+    marginBottom: 4,
+    color: "#FFFFFF",
+  },
+
+  grandTotalFinalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    fontSize: 9,
+    marginTop: 6,
+    paddingTop: 6,
+    borderTop: "1 solid rgba(255,255,255,0.35)",
+    color: "#FFFFFF",
     fontWeight: "bold",
   },
 
@@ -572,6 +592,8 @@ export default function PreventivoPDF({
       maximumFractionDigits: 2,
     });
   }
+
+  const imponibileScontato = Math.max(imponibile - sconto, 0);
 
   function getMacroCategoria(voce: any) {
     return (
@@ -837,33 +859,12 @@ export default function PreventivoPDF({
               <Text>€ {formatEuro(imponibile)}</Text>
             </View>
 
-            <View style={styles.totalRow}>
-              <Text>Cassa Previdenziale (4%)</Text>
-              <Text>€ {formatEuro(cassa)}</Text>
-            </View>
-
-            <View style={styles.totalRow}>
-              <Text>IVA (22%)</Text>
-              <Text>€ {formatEuro(iva)}</Text>
-            </View>
-
             {sconto > 0 && (
               <View style={styles.totalRow}>
-                <Text
-                  style={{
-                    color: "#C62828",
-                    fontWeight: "bold",
-                  }}
-                >
+                <Text style={{ color: "#C62828", fontWeight: "bold" }}>
                   Sconto
                 </Text>
-
-                <Text
-                  style={{
-                    color: "#C62828",
-                    fontWeight: "bold",
-                  }}
-                >
+                <Text style={{ color: "#C62828", fontWeight: "bold" }}>
                   - € {formatEuro(sconto)}
                 </Text>
               </View>
@@ -871,16 +872,30 @@ export default function PreventivoPDF({
           </View>
 
           <View style={styles.grandTotalBox}>
-            <Image
-              src="/pdf/layers.png"
-              style={styles.grandTotalIcon}
-            />
+            <Image src="/pdf/layers.png" style={styles.grandTotalIcon} />
 
-            <Text style={styles.grandTotalLabel}>TOTALE</Text>
+            <Text style={styles.grandTotalLabel}>IMTOTALE IMPONIBILE</Text>
 
             <Text style={styles.grandTotalValue}>
-              € {formatEuro(totale)}
+              € {formatEuro(imponibileScontato)}
             </Text>
+
+            <View style={{ marginTop: 14 }}>
+              <View style={styles.grandTotalSmallRow}>
+                <Text>Cassa Previdenziale 4%</Text>
+                <Text>€ {formatEuro(cassa)}</Text>
+              </View>
+
+              <View style={styles.grandTotalSmallRow}>
+                <Text>IVA 22%</Text>
+                <Text>€ {formatEuro(iva)}</Text>
+              </View>
+
+              <View style={styles.grandTotalFinalRow}>
+                <Text>Totale preventivo</Text>
+                <Text>€ {formatEuro(totale)}</Text>
+              </View>
+            </View>
           </View>
         </View>
 
