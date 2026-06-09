@@ -28,6 +28,10 @@ export default function AppSidebar() {
 
   const [consiglio, setConsiglio] = useState<string>("");
 
+  const [attivitaOpen, setAttivitaOpen] = useState(
+    pathname.startsWith("/attivita")
+  );
+
   const isPreventivoInCompilazione =
     pathname.startsWith("/preventivo/nuovo") ||
     pathname === "/preventivo/step1" ||
@@ -89,6 +93,49 @@ export default function AppSidebar() {
           <span>▦</span>
           Commesse
         </button>
+
+        <button
+          type="button"
+          onClick={() => setAttivitaOpen((prev) => !prev)}
+          className="menu-item-button"
+        >
+          <span className="flex items-center gap-3">
+            <span>▥</span>
+            Attività
+          </span>
+
+          <span className={`transition-transform ${attivitaOpen ? "rotate-180" : ""}`}>
+            ⌃
+          </span>
+        </button>
+
+        {attivitaOpen && (
+          <div className="submenu">
+            <button
+              type="button"
+              onClick={() => gestisciNavigazione("/attivita/calendario")}
+              className={
+                pathname === "/attivita/calendario"
+                  ? "submenu-item-active"
+                  : "submenu-item"
+              }
+            >
+              Calendario
+            </button>
+
+            <button
+              type="button"
+              onClick={() => gestisciNavigazione("/attivita/personale")}
+              className={
+                pathname === "/attivita/personale"
+                  ? "submenu-item-active"
+                  : "submenu-item"
+              }
+            >
+              Personale
+            </button>
+          </div>
+        )}
 
         <button
           type="button"
@@ -262,7 +309,7 @@ export default function AppSidebar() {
         )}
 
         <div className="text-xs text-[#2B2F5E]/60">
-          Versione 2.0.1 - Creato da Antonio Carbone
+          Versione 2.1.0 - Creato da Antonio Carbone
         </div>
       </div>
 

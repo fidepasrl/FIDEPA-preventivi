@@ -196,10 +196,11 @@ export default function DettaglioCommessaPage() {
         }
 
         const { data: noteData } = await supabase
-            .from("commesse_note")
-            .select("*")
-            .eq("commessa_id", id)
-            .order("data_nota", { ascending: false });
+          .from("commesse_note")
+          .select("*")
+          .eq("commessa_id", id)
+          .order("data_nota", { ascending: false })
+          .order("created_at", { ascending: false });
 
         const noteOrdinate = noteData || [];
         setNote(noteOrdinate);
@@ -354,11 +355,19 @@ export default function DettaglioCommessaPage() {
     }
 
     if (data) {
-      const nuoveNote = [...note, data].sort(
-        (a, b) =>
-          new Date(b.data_nota || b.created_at).getTime() -
-          new Date(a.data_nota || a.created_at).getTime()
-      );
+      const nuoveNote = [...note, data].sort((a, b) => {
+        const dataA = a.data_nota || a.created_at.slice(0, 10);
+        const dataB = b.data_nota || b.created_at.slice(0, 10);
+
+        if (dataA !== dataB) {
+          return dataB.localeCompare(dataA);
+        }
+
+        return (
+          new Date(b.created_at).getTime() -
+          new Date(a.created_at).getTime()
+        );
+      });
 
       setNote(nuoveNote);
 
@@ -422,11 +431,19 @@ export default function DettaglioCommessaPage() {
       .map((nota) =>
         nota.id === idNota ? { ...nota, data_nota: nuovaData } : nota
       )
-      .sort(
-        (a, b) =>
-          new Date(b.data_nota || b.created_at).getTime() -
-          new Date(a.data_nota || a.created_at).getTime()
-      );
+      .sort((a, b) => {
+        const dataA = a.data_nota || a.created_at.slice(0, 10);
+        const dataB = b.data_nota || b.created_at.slice(0, 10);
+
+        if (dataA !== dataB) {
+          return dataB.localeCompare(dataA);
+        }
+
+        return (
+          new Date(b.created_at).getTime() -
+          new Date(a.created_at).getTime()
+        );
+      });
 
     setNote(noteRiordinate);
 

@@ -874,7 +874,7 @@ export default function PreventivoPDF({
           <View style={styles.grandTotalBox}>
             <Image src="/pdf/layers.png" style={styles.grandTotalIcon} />
 
-            <Text style={styles.grandTotalLabel}>IMTOTALE IMPONIBILE</Text>
+            <Text style={styles.grandTotalLabel}>TOTALE IMPONIBILE</Text>
 
             <Text style={styles.grandTotalValue}>
               € {formatEuro(imponibileScontato)}

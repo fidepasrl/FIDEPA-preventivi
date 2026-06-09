@@ -1,6 +1,7 @@
 import AppSidebar from "./AppSidebar";
 import AppFeedbackButton from "./AppFeedbackButton";
 import Topbar from "./Topbar";
+import AuthGuard from "@/components/AuthGuard";
 
 export default function LayoutApp({
   children,
@@ -8,16 +9,20 @@ export default function LayoutApp({
   children: React.ReactNode;
 }) {
   return (
-    <main className="min-h-screen bg-[#F2F2F2] text-[#2B2F5E]">
-      <Topbar />
+    <AuthGuard>
+      <div className="min-h-screen bg-[#F2F2F2]">
+        <Topbar />
 
-      <div className="flex">
-        <AppSidebar />
+        <div className="flex">
+          <AppSidebar />
 
-        <section className="flex-1 p-10">{children}</section>
+          <main className="flex-1 min-h-[calc(100vh-4rem)] p-6 overflow-x-hidden">
+            {children}
+          </main>
+        </div>
+
+        <AppFeedbackButton />
       </div>
-
-      <AppFeedbackButton />
-    </main>
+    </AuthGuard>
   );
 }

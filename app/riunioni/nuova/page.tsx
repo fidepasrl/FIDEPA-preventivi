@@ -17,10 +17,19 @@ type Commessa = {
 
 type NotaRiunione = {
   commessa_id: string | null;
+  argomento_id?: string | null;
   titolo: string;
   data: string;
   testo: string;
-  tipo: "commessa" | "libera";
+  tipo: "commessa" | "libera" | "argomento";
+};
+
+type ArgomentoRiunione = {
+  id: string;
+  testo: string;
+  completato: boolean;
+  inserito_in_riunione: boolean;
+  created_at: string;
 };
 
 const PRIORITA: Priorita[] = [
@@ -46,6 +55,8 @@ export default function NuovaRiunionePage() {
 
   const [salvataggioOk, setSalvataggioOk] = useState(false);
 
+  const [argomenti, setArgomenti] = useState<ArgomentoRiunione[]>([]);
+
   const oggi = new Date().toISOString().slice(0, 10);
 
   const settimana = useMemo(() => {
@@ -62,6 +73,7 @@ export default function NuovaRiunionePage() {
 
   useEffect(() => {
     caricaCommesse();
+    caricaArgomenti();
   }, []);
 
   async function caricaCommesse() {
@@ -100,6 +112,49 @@ export default function NuovaRiunionePage() {
     }
   }
 
+  async function caricaArgomenti() {
+    const { data, error } = await supabase
+      .from("argomenti_riunione")
+      .select("*")
+      .eq("completato", false)
+      .eq("inserito_in_riunione", false)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Errore caricamento argomenti:", error);
+      setArgomenti([]);
+      return;
+    }
+
+    setArgomenti(data || []);
+  }
+
+  function selezionaArgomento(argomento: ArgomentoRiunione) {
+    const giaPresente = note.some(
+      (nota) => nota.tipo === "argomento" && nota.argomento_id === argomento.id
+    );
+
+    if (giaPresente) return;
+
+    setNote((correnti) => [
+      ...correnti,
+      {
+        commessa_id: null,
+        argomento_id: argomento.id,
+        titolo: argomento.testo,
+        data: oggi,
+        testo: "",
+        tipo: "argomento",
+      },
+    ]);
+
+    setArgomenti((correnti) =>
+      correnti.filter((item) => item.id !== argomento.id)
+    );
+
+    setCommessaSelezionata(null);
+  }
+
   function aggiungiNotaLibera() {
     setNote((correnti) => [
       ...correnti,
@@ -127,6 +182,19 @@ export default function NuovaRiunionePage() {
       commessaSelezionata?.id === notaRimossa.commessa_id
     ) {
       setCommessaSelezionata(null);
+    }
+
+    if (notaRimossa?.tipo === "argomento" && notaRimossa.argomento_id) {
+      setArgomenti((correnti) => [
+        {
+          id: notaRimossa.argomento_id!,
+          testo: notaRimossa.titolo,
+          completato: false,
+          inserito_in_riunione: false,
+          created_at: new Date().toISOString(),
+        },
+        ...correnti,
+      ]);
     }
   }
 
@@ -171,6 +239,20 @@ export default function NuovaRiunionePage() {
         origine: "riunione",
         data_nota: nota.data,
       });
+    }
+
+    const argomentiInseriti = noteCompilate
+      .filter((nota) => nota.tipo === "argomento" && nota.argomento_id)
+      .map((nota) => nota.argomento_id);
+
+    if (argomentiInseriti.length > 0) {
+      await supabase
+        .from("argomenti_riunione")
+        .update({
+          completato: true,
+          inserito_in_riunione: true,
+        })
+        .in("id", argomentiInseriti);
     }
 
     setSalvataggioOk(true);
@@ -234,6 +316,32 @@ export default function NuovaRiunionePage() {
                 </div>
               );
             })}
+
+            <div className="pt-4 border-t border-gray-300">
+              <p className="text-[11px] uppercase tracking-[0.12em] font-semibold mb-2 text-[#D79D06]">
+                Argomenti suggeriti
+              </p>
+
+              <div className="space-y-1">
+                {argomenti.length === 0 ? (
+                  <p className="text-[13px] text-gray-400 px-3 py-2">
+                    Nessun argomento disponibile.
+                  </p>
+                ) : (
+                  argomenti.map((argomento) => (
+                    <button
+                      key={argomento.id}
+                      type="button"
+                      onClick={() => selezionaArgomento(argomento)}
+                      className="w-full text-left px-3 py-2 rounded-sm text-[13px] text-[#2B2F5E] hover:bg-[#e8e8e8] transition cursor-pointer"
+                    >
+                      {argomento.testo}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
           </div>
         </aside>
 
@@ -278,9 +386,9 @@ export default function NuovaRiunionePage() {
                           {nota.titolo}
                         </h3>
 
-                        {nota.tipo === "libera" && (
+                        {nota.tipo !== "commessa" && (
                           <span className="text-[11px] uppercase tracking-[0.12em] text-gray-400 font-medium">
-                            Nota libera
+                            {nota.tipo === "argomento" ? "Argomento riunione" : "Nota libera"}
                           </span>
                         )}
                       </div>
