@@ -77,6 +77,72 @@ export default function ArchivioPreventivi() {
     ).toBlob();
   }
 
+  function duplicaPreventivo(preventivo: Preventivo) {
+    const datiCliente = {
+      cliente:
+        typeof preventivo.cliente === "string"
+          ? preventivo.cliente
+          : (preventivo.cliente as any)?.cliente || "",
+      piva: (preventivo as any).piva || (preventivo.cliente as any)?.piva || "",
+      indirizzo:
+        (preventivo as any).indirizzo ||
+        (preventivo.cliente as any)?.indirizzo ||
+        "",
+      comune:
+        (preventivo as any).comune ||
+        (preventivo.cliente as any)?.comune ||
+        "",
+      pec: (preventivo as any).pec || (preventivo.cliente as any)?.pec || "",
+      email:
+        (preventivo as any).email || (preventivo.cliente as any)?.email || "",
+      telefono:
+        (preventivo as any).telefono ||
+        (preventivo.cliente as any)?.telefono ||
+        "",
+      referente:
+        (preventivo as any).referente ||
+        (preventivo.cliente as any)?.referente ||
+        "",
+      oggetto: preventivo.oggetto || "",
+    };
+
+    const lavorazioni = preventivo.lavorazioni || [];
+
+    localStorage.setItem("datiClientePreventivo", JSON.stringify(datiCliente));
+
+    localStorage.setItem(
+      "lavorazioniSelezionate",
+      JSON.stringify(lavorazioni.map((voce: any) => voce.id).filter(Boolean))
+    );
+
+    localStorage.setItem(
+      "lavorazioniStep3Importi",
+      JSON.stringify(
+        lavorazioni.map((voce: any) => ({
+          id: voce.id,
+          importo: Number(voce.importo || 0),
+        }))
+      )
+    );
+
+    localStorage.setItem(
+      "preventivoNuovoStep3",
+      JSON.stringify({
+        scontoPercentuale: "",
+        scontoImporto: String(preventivo.sconto || ""),
+        pagamento: preventivo.pagamento || {
+          anticipo: 5,
+          progettazione: 0,
+          realizzazione: 0,
+          chiusura: 0,
+        },
+        modificaImporti: true,
+      })
+    );
+
+    window.location.href = "/preventivo/nuovo/step1";
+  }
+
   async function visualizzaPDF(preventivo: Preventivo) {
     const blob = await creaBlobPDF(preventivo);
     const url = URL.createObjectURL(blob);
@@ -177,6 +243,7 @@ export default function ArchivioPreventivi() {
                     </div>
 
                     <div className="flex gap-2">
+
                       <button
                         type="button"
                         title="Visualizza"
@@ -193,6 +260,15 @@ export default function ArchivioPreventivi() {
                         className="w-10 h-10 border border-gray-300 text-[#2B2F5E] rounded-md text-xl font-medium bg-transparent hover:bg-white hover:border-[#64B445] transition cursor-pointer flex items-center justify-center"
                       >
                         ↓
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => duplicaPreventivo(preventivo)}
+                        className="border border-gray-300 text-[#2B2F5E] w-10 h-10 rounded-md bg-transparent hover:bg-[#e8e8e8] transition cursor-pointer flex items-center justify-center"
+                        title="Duplica preventivo"
+                      >
+                        ⧉
                       </button>
 
                       <button

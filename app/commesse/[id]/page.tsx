@@ -47,6 +47,15 @@ type CommessaElenco = {
   tipo_commessa: TipoCommessa;
 };
 
+type PreventivoCollegato = {
+  id: string;
+  numero: string;
+  data: string;
+  cliente: string;
+  oggetto: string;
+  totale: number;
+};
+
 type Nota = {
   id: string;
   testo: string;
@@ -95,6 +104,11 @@ export default function DettaglioCommessaPage() {
 
   const [salvataggioInCorso, setSalvataggioInCorso] =
     useState(false);
+
+  const [preventivoCollegato, setPreventivoCollegato] = useState<PreventivoCollegato | null>(null);
+  const [popupPreventivi, setPopupPreventivi] = useState(false);
+  const [elencoPreventivi, setElencoPreventivi] = useState<PreventivoCollegato[]>([]);
+  const [caricamentoPreventivi, setCaricamentoPreventivi] = useState(false);
 
   const suggerimentiClienti = clienti.filter((cliente) => {
     if (!commessa?.cliente_nome?.trim()) return false;
@@ -190,6 +204,9 @@ export default function DettaglioCommessaPage() {
                 if (clienteData) {
                     setClienteSelezionato(clienteData);
                 }
+
+                await caricaPreventivoCollegato(id);
+
             } else {
             setClienteSelezionato(null);
             }
@@ -467,6 +484,50 @@ export default function DettaglioCommessaPage() {
     }
   }
 
+  async function caricaPreventivoCollegato(commessa_id_preventivo: string | null) {
+    if (!commessa_id_preventivo) return;
+    const { data } = await supabase
+      .from("preventivi")
+      .select("id, numero, data, cliente, oggetto, totale")
+      .eq("commessa_id", commessa_id_preventivo)
+      .maybeSingle();
+    if (data) setPreventivoCollegato(data);
+  }
+
+  async function apriPopupPreventivi() {
+    setPopupPreventivi(true);
+    setCaricamentoPreventivi(true);
+    const { data } = await supabase
+      .from("preventivi")
+      .select("id, numero, data, cliente, oggetto, totale")
+      .is("commessa_id", null)
+      .order("created_at", { ascending: false });
+    setElencoPreventivi(data || []);
+    setCaricamentoPreventivi(false);
+  }
+
+  async function collegaPreventivo(preventivo: PreventivoCollegato) {
+    const { error } = await supabase
+      .from("preventivi")
+      .update({ commessa_id: id })
+      .eq("id", preventivo.id);
+    if (error) { alert("Errore durante il collegamento del preventivo."); return; }
+    setPreventivoCollegato(preventivo);
+    setPopupPreventivi(false);
+  }
+
+  async function scollegaPreventivo() {
+    if (!preventivoCollegato) return;
+    const conferma = window.confirm("Vuoi scollegare questo preventivo dalla commessa?");
+    if (!conferma) return;
+    const { error } = await supabase
+      .from("preventivi")
+      .update({ commessa_id: null })
+      .eq("id", preventivoCollegato.id);
+    if (error) { alert("Errore durante lo scollegamento."); return; }
+    setPreventivoCollegato(null);
+  }
+
   function formattaData(data: string | null) {
     if (!data) return "-";
     return new Date(data).toLocaleDateString("it-IT");
@@ -600,6 +661,58 @@ export default function DettaglioCommessaPage() {
               >
                 Chiudi
               </button>
+            </div>
+          </div>
+
+          <div className="bg-white border border-gray-200 shadow-sm rounded-sm overflow-hidden mb-3">
+            <div className="px-4 py-3 border-b border-gray-200 bg-[#FAFAFA] flex justify-between items-center">
+              <div>
+                <h3 className="text-[17px] font-normal text-[#2B2F5E]">Preventivo collegato</h3>
+                <p className="text-[15px] text-[#D79D06] mt-0">
+                  {preventivoCollegato ? "Preventivo associato a questa commessa" : "Nessun preventivo collegato"}
+                </p>
+              </div>
+              {!preventivoCollegato && (
+                <button
+                  type="button"
+                  onClick={apriPopupPreventivi}
+                  className="bg-[#64B445] text-white px-5 py-3 rounded-md text-sm font-medium hover:bg-[#5AA03E] transition cursor-pointer"
+                >
+                  Collega preventivo
+                </button>
+              )}
+            </div>
+
+            <div className="p-4">
+              {preventivoCollegato ? (
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="text-[15px] font-semibold text-[#2B2F5E]">
+                      Preventivo n. {preventivoCollegato.numero}
+                    </p>
+                    <p className="text-[13px] text-[#D79D06] mt-0.5">
+                      {preventivoCollegato.cliente} — {preventivoCollegato.data}
+                    </p>
+                    <p className="text-[13px] text-gray-500 mt-1 line-clamp-1">
+                      {preventivoCollegato.oggetto}
+                    </p>
+                    <p className="text-[20px] font-bold text-[#64B445] mt-2">
+                      € {Number(preventivoCollegato.totale).toLocaleString("it-IT", { minimumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={scollegaPreventivo}
+                    className="border border-gray-300 text-[#2B2F5E] px-4 py-2 rounded-md text-sm bg-transparent hover:bg-[#e8e8e8] transition cursor-pointer"
+                  >
+                    Scollega
+                  </button>
+                </div>
+              ) : (
+                <p className="text-[13px] text-gray-400 text-center py-4">
+                  Clicca "Collega preventivo" per associare un preventivo dall'archivio.
+                </p>
+              )}
             </div>
           </div>
 
@@ -896,6 +1009,56 @@ export default function DettaglioCommessaPage() {
           </div>
         </div>
       </div>
+
+      {popupPreventivi && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6">
+          <div className="bg-white rounded-sm shadow-2xl w-full max-w-2xl p-8 max-h-[80vh] flex flex-col">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-xl font-semibold text-[#2B2F5E]">Collega preventivo</h3>
+                <p className="text-sm text-gray-500 mt-1">Seleziona un preventivo dall'archivio</p>
+              </div>
+              <button type="button" onClick={() => setPopupPreventivi(false)}
+                className="text-2xl text-gray-400 hover:text-[#2B2F5E] cursor-pointer">×</button>
+            </div>
+
+            <div className="overflow-y-auto flex-1">
+              {caricamentoPreventivi ? (
+                <p className="text-center text-gray-500 py-10">Caricamento preventivi...</p>
+              ) : elencoPreventivi.length === 0 ? (
+                <p className="text-center text-gray-500 py-10">Nessun preventivo disponibile da collegare.</p>
+              ) : (
+                <div className="space-y-2">
+                  {elencoPreventivi.map((preventivo) => (
+                    <button key={preventivo.id} type="button"
+                      onClick={() => collegaPreventivo(preventivo)}
+                      className="w-full text-left border border-gray-200 rounded-sm p-4 hover:border-[#64B445] hover:bg-[#f6fbf4] transition cursor-pointer"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="text-[15px] font-semibold text-[#2B2F5E]">
+                            Preventivo n. {preventivo.numero}
+                          </p>
+                          <p className="text-[13px] text-[#D79D06] mt-0.5">
+                            {preventivo.cliente} — {preventivo.data}
+                          </p>
+                          <p className="text-[13px] text-gray-500 mt-1 line-clamp-1">
+                            {preventivo.oggetto}
+                          </p>
+                        </div>
+                        <p className="text-[18px] font-bold text-[#64B445] whitespace-nowrap ml-4">
+                          € {Number(preventivo.totale).toLocaleString("it-IT", { minimumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
     </LayoutApp>
   );
 }

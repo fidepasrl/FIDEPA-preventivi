@@ -40,7 +40,7 @@ export default function AppFeedbackButton() {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-50">
+    <div className="fixed bottom-6 right-6 z-[9999]">
       {aperto && (
         <div className="mb-3 w-80 bg-white border border-gray-200 shadow-2xl rounded-md p-4">
           <div className="flex justify-between items-start mb-3">

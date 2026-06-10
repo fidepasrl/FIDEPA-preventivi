@@ -302,28 +302,11 @@ const styles = StyleSheet.create({
 
   totalsWrapper: {
     marginTop: 20,
-    flexDirection: "row",
-    gap: 12,
-  },
-
-  totalsBox: {
-    flex: 4,
-    border: "1 solid #D8DCE8",
-    borderRadius: 8,
-    padding: 12,
-  },
-
-  totalRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 7,
-    fontSize: 9,
   },
 
   grandTotalBox: {
-    flex: 6,
     position: "relative",
-    width: 210,
+    width: "100%",
     backgroundColor: BLUE,
     borderRadius: 8,
     color: "#FFFFFF",
@@ -333,9 +316,9 @@ const styles = StyleSheet.create({
   grandTotalIcon: {
     position: "absolute",
     right: 18,
-    top: 5,
-    width: 80,
-    height: 80,
+    top: 15,
+    width: 150,
+    height: 150,
     objectFit: "contain",
     opacity: 0.1,
   },
@@ -353,7 +336,7 @@ const styles = StyleSheet.create({
   grandTotalSmallRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    fontSize: 8,
+    fontSize: 10,
     marginBottom: 4,
     color: "#FFFFFF",
   },
@@ -361,7 +344,7 @@ const styles = StyleSheet.create({
   grandTotalFinalRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    fontSize: 9,
+    fontSize: 10,
     marginTop: 6,
     paddingTop: 6,
     borderTop: "1 solid rgba(255,255,255,0.35)",
@@ -852,49 +835,49 @@ export default function PreventivoPDF({
           );
         })}
 
-        <View style={styles.totalsWrapper} wrap={false}>
-          <View style={styles.totalsBox}>
-            <View style={styles.totalRow}>
-              <Text>Imponibile</Text>
-              <Text>€ {formatEuro(imponibile)}</Text>
-            </View>
+        <View style={styles.grandTotalBox}>
+          <Image src="/pdf/layers.png" style={styles.grandTotalIcon} />
 
-            {sconto > 0 && (
-              <View style={styles.totalRow}>
-                <Text style={{ color: "#C62828", fontWeight: "bold" }}>
-                  Sconto
-                </Text>
-                <Text style={{ color: "#C62828", fontWeight: "bold" }}>
-                  - € {formatEuro(sconto)}
-                </Text>
-              </View>
-            )}
+          <View style={styles.grandTotalSmallRow}>
+            <Text>Imponibile</Text>
+            <Text>€ {formatEuro(imponibile)}</Text>
           </View>
 
-          <View style={styles.grandTotalBox}>
-            <Image src="/pdf/layers.png" style={styles.grandTotalIcon} />
+          {sconto > 0 && (
+            <View style={styles.grandTotalSmallRow}>
+              <Text style={{ color: "#FF7B7B", fontWeight: "bold" }}>
+                Sconto
+              </Text>
+              <Text style={{ color: "#FF7B7B", fontWeight: "bold" }}>
+                - € {formatEuro(sconto)}
+              </Text>
+            </View>
+          )}
 
-            <Text style={styles.grandTotalLabel}>TOTALE IMPONIBILE</Text>
+          <View style={{ marginTop: 10 }}>
+            <Text style={styles.grandTotalLabel}>
+              TOTALE IMPONIBILE
+            </Text>
 
             <Text style={styles.grandTotalValue}>
               € {formatEuro(imponibileScontato)}
             </Text>
+          </View>
 
-            <View style={{ marginTop: 14 }}>
-              <View style={styles.grandTotalSmallRow}>
-                <Text>Cassa Previdenziale 4%</Text>
-                <Text>€ {formatEuro(cassa)}</Text>
-              </View>
+          <View style={{ marginTop: 14 }}>
+            <View style={styles.grandTotalSmallRow}>
+              <Text>Cassa Previdenziale 4%</Text>
+              <Text>€ {formatEuro(cassa)}</Text>
+            </View>
 
-              <View style={styles.grandTotalSmallRow}>
-                <Text>IVA 22%</Text>
-                <Text>€ {formatEuro(iva)}</Text>
-              </View>
+            <View style={styles.grandTotalSmallRow}>
+              <Text>IVA 22%</Text>
+              <Text>€ {formatEuro(iva)}</Text>
+            </View>
 
-              <View style={styles.grandTotalFinalRow}>
-                <Text>Totale preventivo</Text>
-                <Text>€ {formatEuro(totale)}</Text>
-              </View>
+            <View style={styles.grandTotalFinalRow}>
+              <Text>Totale preventivo</Text>
+              <Text>€ {formatEuro(totale)}</Text>
             </View>
           </View>
         </View>

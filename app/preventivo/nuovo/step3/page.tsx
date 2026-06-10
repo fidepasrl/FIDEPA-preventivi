@@ -39,6 +39,8 @@ const MACROCATEGORIE: MacroCategoria[] = [
   "Chiusura dei lavori",
 ];
 
+const STEP3_STORAGE_KEY = "preventivoNuovoStep3";
+
 export default function PreventivoStep3Page() {
   const [modificaImporti, setModificaImporti] = useState(false);
   const [errorePagamento, setErrorePagamento] = useState(false);
@@ -77,21 +79,37 @@ export default function PreventivoStep3Page() {
       if (voci.length > 0) {
         const { data, error } = await supabase
           .from("lavorazioni")
-          .select("id, nome, descrizione, categoria, macrocategoria, importo")
+          .select("*")
           .in("id", voci);
 
-        if (!error && data) {
+        if (error) {
+          console.error(error);
+        } else {
+          const importiSalvati = localStorage.getItem("lavorazioniStep3Importi");
+
+          const importiModificati: { id: string; importo: number }[] =
+            importiSalvati ? JSON.parse(importiSalvati) : [];
+
           const lavorazioniOrdinate = voci
-            .map((id: string) => data.find((voce: any) => voce.id === id))
+            .map((id: string) => data?.find((voce: any) => voce.id === id))
             .filter(Boolean)
-            .map((voce: any) => ({
-              id: voce.id,
-              nome: voce.nome || "",
-              descrizione: voce.descrizione || "",
-              categoria: voce.categoria || "",
-              macrocategoria: voce.macrocategoria || "Progettazione",
-              importo: Number(voce.importo || 0),
-            }));
+            .map((voce: any) => {
+              const importoModificato = importiModificati.find(
+                (item) => item.id === voce.id
+              );
+
+              return {
+                id: voce.id,
+                nome: voce.nome || "",
+                descrizione: voce.descrizione || "",
+                categoria: voce.categoria || "",
+                macrocategoria: voce.macrocategoria || "Progettazione",
+                importo:
+                  importoModificato?.importo !== undefined
+                    ? Number(importoModificato.importo)
+                    : Number(voce.importo || 0),
+              };
+            });
 
           setLavorazioni(lavorazioniOrdinate);
         }
@@ -105,14 +123,13 @@ export default function PreventivoStep3Page() {
 
       const anno = new Date().getFullYear().toString().slice(-2);
 
-      const { data: ultimoPreventivo, error: erroreProgressivo } =
-        await supabase
-          .from("preventivi")
-          .select("numero")
-          .like("numero", `${anno}%`)
-          .order("numero", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+      const { data: ultimoPreventivo, error: erroreProgressivo } = await supabase
+        .from("preventivi")
+        .select("numero")
+        .like("numero", `${anno}%`)
+        .order("numero", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
       if (erroreProgressivo) {
         console.error(erroreProgressivo);
@@ -133,6 +150,46 @@ export default function PreventivoStep3Page() {
 
     caricaDatiPreventivo();
   }, []);
+
+  useEffect(() => {
+    const datiSalvati = localStorage.getItem(STEP3_STORAGE_KEY);
+
+    if (!datiSalvati) return;
+
+    try {
+      const dati = JSON.parse(datiSalvati);
+
+      if (typeof dati.scontoPercentuale === "string") {
+        setScontoPercentuale(dati.scontoPercentuale);
+      }
+
+      if (typeof dati.scontoImporto === "string") {
+        setScontoImporto(dati.scontoImporto);
+      }
+
+      if (dati.pagamento) {
+        setPagamento(dati.pagamento);
+      }
+
+      if (typeof dati.modificaImporti === "boolean") {
+        setModificaImporti(dati.modificaImporti);
+      }
+    } catch (error) {
+      console.error("Errore caricamento dati temporanei step 3:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(
+      STEP3_STORAGE_KEY,
+      JSON.stringify({
+        scontoPercentuale,
+        scontoImporto,
+        pagamento,
+        modificaImporti,
+      })
+    );
+  }, [scontoPercentuale, scontoImporto, pagamento, modificaImporti]);
 
   const lavorazioniRaggruppate = useMemo(() => {
     return lavorazioni.reduce<Record<string, Lavorazione[]>>((gruppi, voce) => {
@@ -203,11 +260,23 @@ export default function PreventivoStep3Page() {
   }, [haProgettazione, haRealizzazione, haChiusura]);
 
   function aggiornaImporto(id: string, nuovoImporto: string) {
-    setLavorazioni((correnti) =>
-      correnti.map((voce) =>
+    setLavorazioni((correnti) => {
+      const aggiornate = correnti.map((voce) =>
         voce.id === id ? { ...voce, importo: Number(nuovoImporto) } : voce
-      )
-    );
+      );
+
+      localStorage.setItem(
+        "lavorazioniStep3Importi",
+        JSON.stringify(
+          aggiornate.map((voce) => ({
+            id: voce.id,
+            importo: voce.importo,
+          }))
+        )
+      );
+
+      return aggiornate;
+    });
   }
 
   function aggiornaPagamento(campo: keyof typeof pagamento, valore: string) {
@@ -317,6 +386,8 @@ export default function PreventivoStep3Page() {
 
     localStorage.removeItem("datiClientePreventivo");
     localStorage.removeItem("lavorazioniSelezionate");
+    localStorage.removeItem(STEP3_STORAGE_KEY);
+    localStorage.removeItem("lavorazioniStep3Importi");
 
     const blob = await pdf(
       <PreventivoPDF
