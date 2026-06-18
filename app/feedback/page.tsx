@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import LayoutApp from "@/components/LayoutApp";
+import { isDeveloperRole } from "@/lib/roles";
 import { supabase } from "@/lib/supabase";
 
 type Feedback = {
@@ -24,6 +25,8 @@ export default function FeedbackPage() {
 
   const [caricamentoFeedback, setCaricamentoFeedback] = useState(true);
   const [caricamentoConsigli, setCaricamentoConsigli] = useState(true);
+  const [verificaRuolo, setVerificaRuolo] = useState(true);
+  const [autorizzato, setAutorizzato] = useState(false);
 
   const [feedbackDaEliminare, setFeedbackDaEliminare] =
     useState<Feedback | null>(null);
@@ -34,45 +37,89 @@ export default function FeedbackPage() {
   const [nuovoConsiglio, setNuovoConsiglio] = useState("");
 
   useEffect(() => {
-    caricaFeedback();
-    caricaConsigli();
+    let componenteAttivo = true;
+
+    async function caricaFeedbackIniziale() {
+      setCaricamentoFeedback(true);
+
+      const { data, error } = await supabase
+        .from("feedback")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (!componenteAttivo) return;
+
+      if (error) {
+        console.error(error);
+        setFeedback([]);
+      } else {
+        setFeedback(data || []);
+      }
+
+      setCaricamentoFeedback(false);
+    }
+
+    async function caricaConsigliIniziale() {
+      setCaricamentoConsigli(true);
+
+      const { data, error } = await supabase
+        .from("consigli")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (!componenteAttivo) return;
+
+      if (error) {
+        console.error(error);
+        setConsigli([]);
+      } else {
+        setConsigli(data || []);
+      }
+
+      setCaricamentoConsigli(false);
+    }
+
+    async function verificaAccessoSviluppatore() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!componenteAttivo) return;
+
+      if (!user) {
+        setAutorizzato(false);
+        setVerificaRuolo(false);
+        setCaricamentoFeedback(false);
+        setCaricamentoConsigli(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("profili_utente")
+        .select("ruolo")
+        .eq("id", user.id)
+        .single();
+
+      if (!componenteAttivo) return;
+
+      const puoAccedere = !error && isDeveloperRole(data?.ruolo);
+      setAutorizzato(puoAccedere);
+      setVerificaRuolo(false);
+
+      if (puoAccedere) {
+        await Promise.all([caricaFeedbackIniziale(), caricaConsigliIniziale()]);
+      } else {
+        setCaricamentoFeedback(false);
+        setCaricamentoConsigli(false);
+      }
+    }
+
+    verificaAccessoSviluppatore();
+
+    return () => {
+      componenteAttivo = false;
+    };
   }, []);
-
-  async function caricaFeedback() {
-    setCaricamentoFeedback(true);
-
-    const { data, error } = await supabase
-      .from("feedback")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error(error);
-      setFeedback([]);
-    } else {
-      setFeedback(data || []);
-    }
-
-    setCaricamentoFeedback(false);
-  }
-
-  async function caricaConsigli() {
-    setCaricamentoConsigli(true);
-
-    const { data, error } = await supabase
-      .from("consigli")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error(error);
-      setConsigli([]);
-    } else {
-      setConsigli(data || []);
-    }
-
-    setCaricamentoConsigli(false);
-  }
 
   async function eliminaFeedback() {
     if (!feedbackDaEliminare) return;
@@ -164,6 +211,18 @@ export default function FeedbackPage() {
 
   return (
     <LayoutApp>
+      {verificaRuolo ? (
+        <p className="text-center text-gray-500 py-10">
+          Verifica permessi...
+        </p>
+      ) : !autorizzato ? (
+        <div className="bg-white border border-gray-200 shadow-sm rounded-sm p-8">
+          <h2 className="page-title mb-3">Accesso non autorizzato</h2>
+          <p className="text-sm text-gray-500">
+            Sezione riservata allo sviluppatore.
+          </p>
+        </div>
+      ) : (
       <div className="space-y-10">
         <section>
           <div className="flex justify-between items-center mb-6">
@@ -299,6 +358,7 @@ export default function FeedbackPage() {
           )}
         </section>
       </div>
+      )}
 
       {feedbackDaEliminare && (
         <Popup title="Elimina feedback" onClose={() => setFeedbackDaEliminare(null)}>

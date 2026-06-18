@@ -309,7 +309,7 @@ export default function AppSidebar() {
         )}
 
         <div className="text-xs text-[#2B2F5E]/60">
-          Versione 2.1.1 - Creato da Antonio Carbone
+          Versione 2.1.2 - Creato da Antonio Carbone
         </div>
       </div>
 

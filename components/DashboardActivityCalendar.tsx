@@ -1,5 +1,13 @@
 "use client";
 
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
+
 type Persona = {
   id: string;
   nome: string;
@@ -17,6 +25,15 @@ type Attivita = {
   persone: Persona[];
 };
 
+type BarraAttivita = {
+  id: string;
+  item: Attivita;
+  partecipanti: string;
+  titoloCommessa: string;
+  startIndex: number;
+  endIndex: number;
+};
+
 const SIMBOLO_TIPO: Record<string, string> = {
   Pubblica: "■",
   Privata: "●",
@@ -24,61 +41,102 @@ const SIMBOLO_TIPO: Record<string, string> = {
   Concorso: "⚑",
 };
 
-const NUMERO_GIORNI = 10;
-const ALTEZZA_RIGA = 34;
+const NUMERO_GIORNI = 11;
+const INDICE_GIORNO_CORRENTE = Math.floor(NUMERO_GIORNI / 2);
+const ALTEZZA_RIGA = 36;
+const INTERVALLO_CAMBIO_GIORNI_WHEEL = 450;
+const SOGLIA_CAMBIO_GIORNI_WHEEL = 35;
 
 export default function DashboardActivityCalendar({
   attivita,
+  offsetGiorni,
+  setOffsetGiorni,
 }: {
   attivita: Attivita[];
+  offsetGiorni: number;
+  setOffsetGiorni: Dispatch<SetStateAction<number>>;
 }) {
-  const giorni = prossimiGiorniLavorativi(NUMERO_GIORNI);
+  const contenitoreCalendarioRef = useRef<HTMLDivElement | null>(null);
+  const ultimoCambioGiorniWheel = useRef(0);
+
+  const giorni = useMemo(
+    () => giorniLavorativiCentrati(NUMERO_GIORNI, offsetGiorni),
+    [offsetGiorni]
+  );
+
+  const indiceOggi = giorni.findIndex((giorno) => isOggi(giorno));
 
   const barreGrezzE = attivita
-    .flatMap((item) =>
-      item.persone.map((persona) => {
-        const startIndex = indiceGiornoLavorativo(item.data_inizio, giorni);
-        if (startIndex === -1) return null;
+    .map((item) => {
+      const indici = getGiorniLavorativiAttivita(item)
+        .map((giorno) => indiceGiorno(giorno, giorni))
+        .filter((indice) => indice >= 0);
 
-        const durata = Math.max(1, Number(item.giorni || 1));
-        const endIndex = Math.min(startIndex + durata, giorni.length);
+      if (indici.length === 0) return null;
 
-        if (startIndex >= giorni.length || endIndex <= 0) return null;
+      const titoloCommessa =
+        item.commessa_id && item.tipo_commessa
+          ? `${SIMBOLO_TIPO[item.tipo_commessa] || ""} ${
+              item.titolo_commessa || ""
+            }`
+          : "Attivita libera";
 
-        const titoloCommessa =
-          item.commessa_id && item.tipo_commessa
-            ? `${SIMBOLO_TIPO[item.tipo_commessa] || ""} ${
-                item.titolo_commessa || ""
-              }`
-            : "Attività libera";
-
-        return {
-          id: `${item.id}-${persona.id}`,
-          persona,
-          item,
-          titoloCommessa,
-          startIndex,
-          endIndex,
-        };
-      })
-    )
-    .filter(Boolean) as {
-    id: string;
-    persona: Persona;
-    item: Attivita;
-    titoloCommessa: string;
-    startIndex: number;
-    endIndex: number;
-  }[];
+      return {
+        id: item.id,
+        item,
+        partecipanti: getPartecipanti(item),
+        titoloCommessa,
+        startIndex: Math.min(...indici),
+        endIndex: Math.max(...indici) + 1,
+      };
+    })
+    .filter(Boolean) as BarraAttivita[];
 
   const barre = assegnaRighe(barreGrezzE);
+  const righe = Math.max(1, numeroRighe(barre));
+
+  useEffect(() => {
+    const contenitore = contenitoreCalendarioRef.current;
+    if (!contenitore) return;
+
+    function gestisciCambioGiorniWheel(event: WheelEvent) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (Math.abs(event.deltaY) < SOGLIA_CAMBIO_GIORNI_WHEEL) {
+        return;
+      }
+
+      const adesso = Date.now();
+      if (
+        adesso - ultimoCambioGiorniWheel.current <
+        INTERVALLO_CAMBIO_GIORNI_WHEEL
+      ) {
+        return;
+      }
+
+      ultimoCambioGiorniWheel.current = adesso;
+      setOffsetGiorni((corrente) => corrente + (event.deltaY > 0 ? 1 : -1));
+    }
+
+    contenitore.addEventListener("wheel", gestisciCambioGiorniWheel, {
+      passive: false,
+    });
+
+    return () => {
+      contenitore.removeEventListener("wheel", gestisciCambioGiorniWheel);
+    };
+  }, [setOffsetGiorni]);
 
   return (
-    <div className="w-full overflow-hidden">
+    <div
+      ref={contenitoreCalendarioRef}
+      className="w-full overflow-hidden overscroll-contain"
+    >
       <div
         className="relative w-full"
         style={{
-          minHeight: `${70 + Math.max(1, numeroRighe(barre)) * ALTEZZA_RIGA}px`,
+          minHeight: `${70 + righe * ALTEZZA_RIGA}px`,
         }}
       >
         <div
@@ -90,7 +148,9 @@ export default function DashboardActivityCalendar({
           {giorni.map((giorno) => (
             <div
               key={giorno.toISOString()}
-              className="border-r border-b border-gray-200 bg-[#FAFAFA] px-2 py-2 text-[11px] uppercase tracking-[0.08em] text-gray-500 font-medium text-center"
+              className={`border-r border-b border-gray-200 bg-[#FAFAFA] px-2 py-2 text-center text-[11px] font-medium uppercase ${
+                isOggi(giorno) ? "text-[#D79D06]" : "text-gray-500"
+              }`}
             >
               {giorno.toLocaleDateString("it-IT", {
                 weekday: "short",
@@ -112,15 +172,25 @@ export default function DashboardActivityCalendar({
           }}
         />
 
+        {indiceOggi >= 0 && (
+          <div
+            className="pointer-events-none absolute top-0 bottom-0 z-20 border-2 border-[#D79D06]"
+            style={{
+              left: `${(indiceOggi / giorni.length) * 100}%`,
+              width: `${100 / giorni.length}%`,
+            }}
+          />
+        )}
+
         <div
           className="relative"
           style={{
-            height: `${Math.max(1, numeroRighe(barre)) * ALTEZZA_RIGA + 18}px`,
+            height: `${righe * ALTEZZA_RIGA + 18}px`,
           }}
         >
           {barre.length === 0 ? (
-            <div className="text-sm text-gray-400 py-8 px-4">
-              Nessuna attività nei prossimi giorni lavorativi.
+            <div className="px-4 py-8 text-sm text-gray-400">
+              Nessuna attivita nei giorni visualizzati.
             </div>
           ) : (
             barre.map((barra) => {
@@ -131,16 +201,22 @@ export default function DashboardActivityCalendar({
               return (
                 <div
                   key={barra.id}
-                  className="absolute h-7 rounded-sm text-white text-[12px] px-3 flex items-center shadow-sm truncate"
+                  className="absolute flex h-8 flex-col justify-center overflow-hidden rounded-sm px-2 py-1 text-[11px] leading-tight text-white shadow-sm"
                   style={{
                     left: `${leftPercent}%`,
                     width: `calc(${widthPercent}% - 6px)`,
-                    top: 14 + barra.riga * ALTEZZA_RIGA,
-                    backgroundColor: barra.persona.colore,
+                    top: 12 + barra.riga * ALTEZZA_RIGA,
+                    background: getSfondoAttivita(barra.item),
+                    textShadow: "0 1px 1px rgba(0, 0, 0, 0.35)",
                   }}
-                  title={`${barra.persona.nome} - ${barra.titoloCommessa}`}
+                  title={`${barra.partecipanti} - ${barra.titoloCommessa} - ${barra.item.titolo}`}
                 >
-                  {barra.titoloCommessa}
+                  {barra.item.persone.length > 1 && (
+                    <span className="truncate font-semibold">
+                      {barra.partecipanti}
+                    </span>
+                  )}
+                  <span className="truncate">{barra.titoloCommessa}</span>
                 </div>
               );
             })
@@ -151,16 +227,7 @@ export default function DashboardActivityCalendar({
   );
 }
 
-function assegnaRighe(
-  barre: {
-    id: string;
-    persona: Persona;
-    item: Attivita;
-    titoloCommessa: string;
-    startIndex: number;
-    endIndex: number;
-  }[]
-) {
+function assegnaRighe(barre: BarraAttivita[]) {
   const righe: { startIndex: number; endIndex: number }[][] = [];
 
   return [...barre]
@@ -197,27 +264,99 @@ function numeroRighe(barre: { riga: number }[]) {
   return Math.max(...barre.map((barra) => barra.riga)) + 1;
 }
 
-function prossimiGiorniLavorativi(numeroGiorni: number) {
-  const giorni: Date[] = [];
-  const data = new Date();
-  data.setHours(0, 0, 0, 0);
+function giorniLavorativiCentrati(numeroGiorni: number, offsetGiorni: number) {
+  const centro = spostaGiorniLavorativi(new Date(), offsetGiorni);
+  const precedenti: Date[] = [];
+  let cursore = centro;
+
+  while (precedenti.length < INDICE_GIORNO_CORRENTE) {
+    cursore = spostaGiorniLavorativi(cursore, -1);
+    precedenti.unshift(cursore);
+  }
+
+  const giorni = [...precedenti, centro];
+  cursore = centro;
 
   while (giorni.length < numeroGiorni) {
-    if (!isWeekend(data)) {
-      giorni.push(new Date(data));
-    }
-
-    data.setDate(data.getDate() + 1);
+    cursore = spostaGiorniLavorativi(cursore, 1);
+    giorni.push(cursore);
   }
 
   return giorni;
 }
 
-function indiceGiornoLavorativo(dataInizio: string, giorni: Date[]) {
-  const data = new Date(dataInizio);
-  data.setHours(0, 0, 0, 0);
+function spostaGiorniLavorativi(dataInizio: Date, delta: number) {
+  const data = normalizzaData(dataInizio);
+  const passo = delta >= 0 ? 1 : -1;
+  let rimanenti = Math.abs(delta);
 
-  return giorni.findIndex((giorno) => giorno.getTime() === data.getTime());
+  while (rimanenti > 0) {
+    data.setDate(data.getDate() + passo);
+
+    if (!isWeekend(data)) {
+      rimanenti--;
+    }
+  }
+
+  return new Date(data);
+}
+
+function getGiorniLavorativiAttivita(item: Attivita) {
+  const giorniTotali = Math.max(1, Number(item.giorni || 1));
+  const giorni: Date[] = [];
+  const corrente = normalizzaData(new Date(item.data_inizio));
+
+  while (giorni.length < giorniTotali) {
+    if (!isWeekend(corrente)) {
+      giorni.push(new Date(corrente));
+    }
+
+    corrente.setDate(corrente.getDate() + 1);
+  }
+
+  return giorni;
+}
+
+function indiceGiorno(data: Date, giorni: Date[]) {
+  const chiave = normalizzaData(data).getTime();
+  return giorni.findIndex((giorno) => giorno.getTime() === chiave);
+}
+
+function getPartecipanti(item: Attivita) {
+  return item.persone.map((persona) => persona.nome).join(", ");
+}
+
+function getSfondoAttivita(item: Attivita) {
+  const colori = item.persone
+    .map((persona) => persona.colore)
+    .filter(Boolean);
+
+  if (colori.length === 0) {
+    return "#5E9AD3";
+  }
+
+  if (colori.length === 1) {
+    return colori[0];
+  }
+
+  const ampiezza = 100 / colori.length;
+  const stop = colori.flatMap((colore, index) => {
+    const inizio = Math.round(index * ampiezza);
+    const fine = Math.round((index + 1) * ampiezza);
+
+    return [`${colore} ${inizio}%`, `${colore} ${fine}%`];
+  });
+
+  return `linear-gradient(135deg, ${stop.join(", ")})`;
+}
+
+function isOggi(data: Date) {
+  const oggi = normalizzaData(new Date());
+  return normalizzaData(data).getTime() === oggi.getTime();
+}
+
+function normalizzaData(data: Date) {
+  return new Date(data.getFullYear(), data.getMonth(), data.getDate());
 }
 
 function isWeekend(data: Date) {

@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import LayoutApp from "@/components/LayoutApp";
 import { supabase } from "@/lib/supabase";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import DashboardActivityCalendar from "@/components/DashboardActivityCalendar";
 
 type TipoCommessa = "Pubblica" | "Privata" | "Gara" | "Concorso";
+type Priorita = "Urgente" | "Alta" | "Normale" | "Bassa" | "Terminato";
 
 type Aggiornamento = {
   id: string;
@@ -14,6 +16,7 @@ type Aggiornamento = {
   data_nota: string | null;
   created_at: string;
   commesse: {
+    id: string;
     titolo: string;
     codice: string | null;
     tipo_commessa: TipoCommessa | null;
@@ -59,13 +62,14 @@ type CommessaMappa = {
   latitudine: number | null;
   longitudine: number | null;
   tipo_commessa: TipoCommessa | null;
+  priorita: Priorita | null;
 };
 
 const SIMBOLO_TIPO: Record<string, string> = {
-  Pubblica: "■",
-  Privata: "●",
-  Gara: "▲",
-  Concorso: "⚑",
+  Pubblica: "\u25A0",
+  Privata: "\u25CF",
+  Gara: "\u25B2",
+  Concorso: "\u2691",
 };
 
 export default function Home() {
@@ -74,6 +78,8 @@ export default function Home() {
   const [argomenti, setArgomenti] = useState<ArgomentoRiunione[]>([]);
   const [listaStudio, setListaStudio] = useState<VoceStudio[]>([]);
   const [commesseMappa, setCommesseMappa] = useState<CommessaMappa[]>([]);
+  const [offsetCalendarioDashboard, setOffsetCalendarioDashboard] =
+    useState(0);
 
   const DashboardMap = dynamic(
     () => import("@/components/DashboardMap").then((mod) => mod.default),
@@ -131,6 +137,7 @@ export default function Home() {
         data_nota,
         created_at,
         commesse (
+          id,
           titolo,
           codice,
           tipo_commessa
@@ -246,7 +253,9 @@ export default function Home() {
   async function caricaCommesseMappa() {
     const { data, error } = await supabase
       .from("commesse")
-      .select("id, titolo, posizione, latitudine, longitudine, tipo_commessa")
+      .select(
+        "id, titolo, posizione, latitudine, longitudine, tipo_commessa, priorita"
+      )
       .not("latitudine", "is", null)
       .not("longitudine", "is", null)
       .order("titolo", { ascending: true });
@@ -414,12 +423,51 @@ export default function Home() {
         ) : (
           <>
 
-            <Card title="Calendario attività in corso">
-              <DashboardActivityCalendar attivita={attivita} />
+            <Card
+              title={
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setOffsetCalendarioDashboard((corrente) => corrente - 1)
+                    }
+                    className="text-[#2B2F5E] text-2xl leading-none px-2 hover:text-[#D79D06] transition cursor-pointer"
+                    aria-label="Giorni precedenti"
+                  >
+                    &lsaquo;
+                  </button>
+
+                  <Link
+                    href="/attivita/calendario"
+                    className="flex-1 text-center hover:text-[#D79D06] transition"
+                  >
+                    Calendario attivit&agrave; in corso
+                  </Link>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setOffsetCalendarioDashboard((corrente) => corrente + 1)
+                    }
+                    className="text-[#2B2F5E] text-2xl leading-none px-2 hover:text-[#D79D06] transition cursor-pointer"
+                    aria-label="Giorni successivi"
+                  >
+                    &rsaquo;
+                  </button>
+                </div>
+              }
+            >
+              <Link href="/attivita/calendario" className="block">
+                <DashboardActivityCalendar
+                  attivita={attivita}
+                  offsetGiorni={offsetCalendarioDashboard}
+                  setOffsetGiorni={setOffsetCalendarioDashboard}
+                />
+              </Link>
             </Card>
 
             <div className="grid grid-cols-1 xl:grid-cols-[1fr_1fr] gap-4 items-stretch">
-              <Card title="Ultimi aggiornamenti attività">
+              <Card title={<>Ultimi aggiornamenti attivit&agrave;</>}>
                 <div className="space-y-3">
                   {aggiornamenti.length === 0 ? (
                     <p className="text-sm text-gray-400">
@@ -430,11 +478,8 @@ export default function Home() {
                       const tipo = item.commesse?.tipo_commessa || "";
                       const simbolo = tipo ? SIMBOLO_TIPO[tipo] || "" : "";
 
-                      return (
-                        <div
-                          key={item.id}
-                          className="border-b border-gray-100 pb-3 last:border-b-0 last:pb-0"
-                        >
+                      const contenuto = (
+                        <>
                           <p className="text-[13px] text-[#D79D06]">
                             {new Date(item.created_at).toLocaleDateString("it-IT")}{" "}
                             {new Date(item.created_at).toLocaleTimeString("it-IT", {
@@ -449,6 +494,23 @@ export default function Home() {
                             </span>{" "}
                             - {item.testo}
                           </p>
+                        </>
+                      );
+
+                      return item.commesse?.id ? (
+                        <Link
+                          key={item.id}
+                          href={`/commesse/${item.commesse.id}`}
+                          className="block border-b border-gray-100 pb-3 last:border-b-0 last:pb-0 hover:bg-[#FAFAFA] transition"
+                        >
+                          {contenuto}
+                        </Link>
+                      ) : (
+                        <div
+                          key={item.id}
+                          className="border-b border-gray-100 pb-3 last:border-b-0 last:pb-0"
+                        >
+                          {contenuto}
                         </div>
                       );
                     })
@@ -500,7 +562,7 @@ export default function Home() {
                               onClick={() => eliminaArgomento(item.id)}
                               className="text-red-500 hover:text-red-700 text-lg font-semibold transition cursor-pointer"
                             >
-                              ×
+                              &times;
                             </button>
                           </div>
                         ))
@@ -557,7 +619,7 @@ export default function Home() {
                               onClick={() => eliminaVoceStudio(item.id)}
                               className="text-red-500 hover:text-red-700 text-lg font-semibold transition cursor-pointer"
                             >
-                              ×
+                              &times;
                             </button>
                           </div>
                         ))
@@ -599,8 +661,8 @@ function Card({
   bodyClassName = "",
   className = "",
 }: {
-  title: string;
-  children: React.ReactNode;
+  title: ReactNode;
+  children: ReactNode;
   bodyClassName?: string;
   className?: string;
 }) {
@@ -608,7 +670,7 @@ function Card({
     <div className={`bg-white border border-gray-200 shadow-sm rounded-sm overflow-hidden ${className}`}>
       <div className="bg-white border border-gray-200 shadow-sm rounded-sm overflow-hidden h-full">
         <div className="px-4 py-3 border-b border-gray-200 bg-[#FAFAFA]">
-          <h3 className="text-[17px] font-normal text-[#2B2F5E]">{title}</h3>
+          <div className="text-[17px] font-normal text-[#2B2F5E]">{title}</div>
         </div>
 
         <div className={`p-4 ${bodyClassName}`}>{children}</div>

@@ -3,14 +3,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { isDeveloperRole, normalizeRole, roleLabel } from "@/lib/roles";
 import { supabase } from "@/lib/supabase";
 
-const FEEDBACK_PASSWORD =
-  process.env.NEXT_PUBLIC_FEEDBACK_PASSWORD || "";
-
 export default function Topbar() {
-  const now = new Date();
-
   const today = new Date().toLocaleDateString("it-IT", {
     weekday: "long",
     day: "2-digit",
@@ -18,56 +14,69 @@ export default function Topbar() {
     year: "numeric",
   });
 
-  const [ruolo, setRuolo] = useState("USER");
-
-  const [showFeedbackLogin, setShowFeedbackLogin] = useState(false);
-  const [feedbackPassword, setFeedbackPassword] = useState("");
+  const [ruolo, setRuolo] = useState("user");
 
   useEffect(() => {
-    caricaRuolo();
-  }, []);
+    let componenteAttivo = true;
 
-  async function caricaRuolo() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    async function caricaRuolo() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-    if (!user) return;
+      if (!user || !componenteAttivo) return;
 
-    const { data } = await supabase
-      .from("profili_utente")
-      .select("ruolo")
-      .eq("id", user.id)
-      .single();
+      const { data } = await supabase
+        .from("profili_utente")
+        .select("ruolo")
+        .eq("id", user.id)
+        .single();
 
-    if (data?.ruolo === "admin") {
-      setRuolo("ADMIN");
-    } else {
-      setRuolo("USER");
+      if (componenteAttivo) {
+        setRuolo(normalizeRole(data?.ruolo));
+      }
     }
-  }
+
+    caricaRuolo();
+
+    return () => {
+      componenteAttivo = false;
+    };
+  }, []);
 
   async function logout() {
     await supabase.auth.signOut();
     window.location.href = "/login";
   }
 
+  const puoVedereFeedback = isDeveloperRole(ruolo);
+  const logoFeedback = (
+    <Image
+      src="/fidepabutton.png"
+      alt="Feedback"
+      width={36}
+      height={36}
+      className="rounded-full"
+    />
+  );
+
   return (
     <header className="h-16 bg-[#5E9AD3] text-white flex items-center justify-between px-8 shadow-sm">
       <div className="flex items-center gap-4">
-        <button
-          type="button"
-          onClick={() => setShowFeedbackLogin(true)}
-          className="cursor-pointer"
-        >
-          <Image
-            src="/fidepabutton.png"
-            alt="Feedback"
-            width={36}
-            height={36}
-            className="rounded-full"
-          />
-        </button>
+        {puoVedereFeedback ? (
+          <Link
+            href="/feedback"
+            className="cursor-pointer"
+            title="Feedback"
+            aria-label="Apri feedback"
+          >
+            {logoFeedback}
+          </Link>
+        ) : (
+          <span className="inline-flex" aria-hidden="true">
+            {logoFeedback}
+          </span>
+        )}
 
         <Image
           src="/fidepa.png"
@@ -88,7 +97,7 @@ export default function Topbar() {
         </span>
 
         <span className="text-white/80">
-          {ruolo}
+          {roleLabel(ruolo)}
         </span>
 
         <button
@@ -99,51 +108,6 @@ export default function Topbar() {
           Esci
         </button>
       </div>
-
-      {showFeedbackLogin && (
-        <div className="fixed inset-0 bg-black/40 z-[9999] flex items-center justify-center">
-          <div className="bg-white rounded-md shadow-xl p-6 w-[360px]">
-            <h3 className="text-lg font-medium text-[#2B2F5E] mb-4">
-              Accesso
-            </h3>
-
-            <input
-              type="password"
-              value={feedbackPassword}
-              onChange={(e) => setFeedbackPassword(e.target.value)}
-              placeholder="Password"
-              className="w-full border border-gray-300 rounded-md px-3 py-2 mb-4 text-[#2B2F5E] placeholder:text-gray-400 bg-white outline-none"
-            />
-
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowFeedbackLogin(false);
-                  setFeedbackPassword("");
-                }}
-                className="px-3 py-2 text-gray-600"
-              >
-                Annulla
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (feedbackPassword === FEEDBACK_PASSWORD) {
-                    window.location.href = "/feedback";
-                  } else {
-                    alert("Password non corretta.");
-                  }
-                }}
-                className="px-4 py-2 bg-[#64B445] text-white rounded-md"
-              >
-                Accedi
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </header>
   );

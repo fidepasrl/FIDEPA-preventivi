@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type WheelEvent } from "react";
 import LayoutApp from "@/components/LayoutApp";
 import { supabase } from "@/lib/supabase";
 
@@ -17,6 +17,8 @@ type Persona = {
   attivo: boolean;
 };
 
+type RelazioneSupabase<T> = T | T[] | null | undefined;
+
 type Attivita = {
   id: string;
   titolo: string;
@@ -28,6 +30,31 @@ type Attivita = {
   persone: Persona[];
 };
 
+type AttivitaRow = {
+  id: string;
+  titolo: string;
+  commessa_id: string | null;
+  data_inizio: string;
+  giorni: number;
+  commesse?: {
+    titolo: string | null;
+    tipo_commessa: string | null;
+  }[] | {
+    titolo: string | null;
+    tipo_commessa: string | null;
+  } | null;
+  attivita_personale?: {
+    personale: RelazioneSupabase<Persona>;
+  }[] | null;
+};
+
+type SegmentoCalendario = {
+  attivita: Attivita;
+  start: number;
+  end: number;
+  riga: number;
+};
+
 const FORM_INIZIALE = {
   titolo: "",
   commessa_id: "",
@@ -35,6 +62,20 @@ const FORM_INIZIALE = {
   giorni: "1",
   persone_ids: [] as string[],
 };
+
+const COLONNE_CALENDARIO =
+  "44px repeat(5, minmax(0, 1fr)) 44px 44px";
+const COLONNE_GIORNI_CALENDARIO = "repeat(5, minmax(0, 1fr)) 44px 44px";
+const INTERVALLO_CAMBIO_MESE_WHEEL = 650;
+const SOGLIA_CAMBIO_MESE_WHEEL = 40;
+
+function getRelazioneSingola<T>(valore: RelazioneSupabase<T>) {
+  if (Array.isArray(valore)) {
+    return valore[0] || null;
+  }
+
+  return valore || null;
+}
 
 export default function CalendarioAttivitaPage() {
   const [meseCorrente, setMeseCorrente] = useState(new Date());
@@ -48,6 +89,7 @@ export default function CalendarioAttivitaPage() {
     useState<Attivita | null>(null);
 
   const [caricamento, setCaricamento] = useState(true);
+  const ultimoCambioMeseWheel = useRef(0);
 
   const SIMBOLO_TIPO: Record<string, string> = {
     Pubblica: "■",
@@ -62,20 +104,36 @@ export default function CalendarioAttivitaPage() {
   const giorniMese = useMemo(() => {
     const primoGiorno = new Date(anno, mese, 1);
     const ultimoGiorno = new Date(anno, mese + 1, 0);
-    const giorni = [];
+    const giorni: Date[] = [];
 
     const offset = primoGiorno.getDay() === 0 ? 6 : primoGiorno.getDay() - 1;
 
     for (let i = 0; i < offset; i++) {
-      giorni.push(null);
+      giorni.push(new Date(anno, mese, i - offset + 1));
     }
 
     for (let giorno = 1; giorno <= ultimoGiorno.getDate(); giorno++) {
       giorni.push(new Date(anno, mese, giorno));
     }
 
+    const giorniMancanti = giorni.length % 7 === 0 ? 0 : 7 - (giorni.length % 7);
+
+    for (let giorno = 1; giorno <= giorniMancanti; giorno++) {
+      giorni.push(new Date(anno, mese + 1, giorno));
+    }
+
     return giorni;
   }, [anno, mese]);
+
+  const settimaneCalendario = useMemo(() => {
+    const settimane: Date[][] = [];
+
+    for (let index = 0; index < giorniMese.length; index += 7) {
+      settimane.push(giorniMese.slice(index, index + 7));
+    }
+
+    return settimane;
+  }, [giorniMese]);
 
   useEffect(() => {
     caricaDati();
@@ -133,23 +191,25 @@ export default function CalendarioAttivitaPage() {
       return;
     }
 
-    console.log("ATTIVITA DATA", data);
-    console.log("ATTIVITA ERROR", error);
+    const righe = (data || []) as AttivitaRow[];
 
-    const normalizzate =
-        data?.map((item: any) => ({
-            id: item.id,
-            titolo: item.titolo,
-            commessa_id: item.commessa_id,
-            tipo_commessa: item.commesse?.tipo_commessa || null,
-            titolo_commessa: item.commesse?.titolo || null,
-            data_inizio: item.data_inizio,
-            giorni: item.giorni,
-            persone:
-            item.attivita_personale
-                ?.map((rel: any) => rel.personale)
-                .filter(Boolean) || [],
-        })) || [];
+    const normalizzate = righe.map((item) => {
+      const commessa = getRelazioneSingola(item.commesse);
+
+      return {
+        id: item.id,
+        titolo: item.titolo,
+        commessa_id: item.commessa_id,
+        tipo_commessa: commessa?.tipo_commessa || null,
+        titolo_commessa: commessa?.titolo || null,
+        data_inizio: item.data_inizio,
+        giorni: item.giorni,
+        persone:
+          item.attivita_personale
+            ?.map((rel) => getRelazioneSingola(rel.personale))
+            .filter((persona): persona is Persona => Boolean(persona)) || [],
+      };
+    });
 
     setAttivita(normalizzate);
   }
@@ -158,7 +218,26 @@ export default function CalendarioAttivitaPage() {
     setMeseCorrente(new Date(anno, mese + delta, 1));
   }
 
-  function aggiornaCampo(campo: keyof typeof FORM_INIZIALE, valore: any) {
+  function gestisciCambioMeseWheel(event: WheelEvent<HTMLDivElement>) {
+    if (Math.abs(event.deltaY) < SOGLIA_CAMBIO_MESE_WHEEL) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const adesso = Date.now();
+    if (adesso - ultimoCambioMeseWheel.current < INTERVALLO_CAMBIO_MESE_WHEEL) {
+      return;
+    }
+
+    ultimoCambioMeseWheel.current = adesso;
+    cambiaMese(event.deltaY > 0 ? 1 : -1);
+  }
+
+  function aggiornaCampo<TCampo extends keyof typeof FORM_INIZIALE>(
+    campo: TCampo,
+    valore: (typeof FORM_INIZIALE)[TCampo]
+  ) {
     setForm((corrente) => ({
       ...corrente,
       [campo]: valore,
@@ -208,10 +287,6 @@ export default function CalendarioAttivitaPage() {
       alert("Seleziona almeno una persona.");
       return;
     }
-
-    const commessaSelezionata = commesse.find(
-      (commessa) => commessa.id === form.commessa_id
-    );
 
     const titolo = form.titolo.trim() || "Attività senza descrizione";
 
@@ -314,53 +389,163 @@ export default function CalendarioAttivitaPage() {
     await caricaAttivita();
   }
 
-    function attivitaDelGiorno(giorno: Date) {
-        return attivita.filter((item) =>
-            isGiornoLavorativoAttivita(
-            giorno,
-            new Date(item.data_inizio),
-            Number(item.giorni || 1)
-            )
-        );
+  function isWeekend(data: Date) {
+    const giorno = data.getDay();
+    return giorno === 0 || giorno === 6;
+  }
+
+  function isMeseCorrente(data: Date) {
+    return data.getFullYear() === anno && data.getMonth() === mese;
+  }
+
+  function isOggi(data: Date) {
+    const oggi = new Date();
+
+    return (
+      data.getFullYear() === oggi.getFullYear() &&
+      data.getMonth() === oggi.getMonth() &&
+      data.getDate() === oggi.getDate()
+    );
+  }
+
+  function getChiaveData(data: Date) {
+    const annoData = data.getFullYear();
+    const meseData = String(data.getMonth() + 1).padStart(2, "0");
+    const giornoData = String(data.getDate()).padStart(2, "0");
+
+    return `${annoData}-${meseData}-${giornoData}`;
+  }
+
+  function getNumeroSettimana(data: Date) {
+    const dataUtc = new Date(
+      Date.UTC(data.getFullYear(), data.getMonth(), data.getDate())
+    );
+    const giornoSettimana = dataUtc.getUTCDay() || 7;
+
+    dataUtc.setUTCDate(dataUtc.getUTCDate() + 4 - giornoSettimana);
+
+    const inizioAnno = new Date(Date.UTC(dataUtc.getUTCFullYear(), 0, 1));
+    const differenzaGiorni =
+      (dataUtc.getTime() - inizioAnno.getTime()) / 86400000 + 1;
+
+    return Math.ceil(differenzaGiorni / 7);
+  }
+
+  function getNumeroSettimanaCalendario(settimana: (Date | null)[]) {
+    const primoGiorno = settimana.find(
+      (giorno): giorno is Date => Boolean(giorno)
+    );
+
+    return primoGiorno ? getNumeroSettimana(primoGiorno) : null;
+  }
+
+  function getGiorniLavorativiAttivita(item: Attivita) {
+    const giorniTotali = Math.max(1, Number(item.giorni || 1));
+    const giorni: Date[] = [];
+    const corrente = normalizzaData(new Date(item.data_inizio));
+
+    while (giorni.length < giorniTotali) {
+      if (!isWeekend(corrente)) {
+        giorni.push(new Date(corrente));
+      }
+
+      corrente.setDate(corrente.getDate() + 1);
     }
 
-    function isWeekend(data: Date) {
-        const giorno = data.getDay();
-        return giorno === 0 || giorno === 6;
-    }
+    return giorni;
+  }
 
-    function aggiungiGiorniLavorativi(
-        dataInizio: Date,
-        giorniLavorativi: number
+  function creaSegmentiSettimana(settimana: (Date | null)[]) {
+    const chiaviSettimana = settimana.map((giorno) =>
+      giorno ? getChiaveData(giorno) : null
+    );
+
+    const segmenti = attivita
+      .map((item) => {
+        const indici = getGiorniLavorativiAttivita(item)
+          .map((giorno) => chiaviSettimana.indexOf(getChiaveData(giorno)))
+          .filter((indice) => indice >= 0);
+
+        if (indici.length === 0) {
+          return null;
+        }
+
+        return {
+          attivita: item,
+          start: Math.min(...indici),
+          end: Math.max(...indici),
+          riga: 0,
+        };
+      })
+      .filter(Boolean) as SegmentoCalendario[];
+
+    const righeOccupate: boolean[][] = [];
+
+    return segmenti
+      .sort((primo, secondo) => {
+        if (primo.start !== secondo.start) return primo.start - secondo.start;
+        return secondo.end - secondo.start - (primo.end - primo.start);
+      })
+      .map((segmento) => {
+        let riga = 0;
+
+        while (
+          righeOccupate[riga]?.some(
+            (occupata, indice) =>
+              occupata && indice >= segmento.start && indice <= segmento.end
+          )
         ) {
-        const data = new Date(dataInizio);
-        let giorniConteggiati = isWeekend(data) ? 0 : 1;
+          riga++;
+        }
 
-        while (giorniConteggiati < giorniLavorativi) {
-            data.setDate(data.getDate() + 1);
+        if (!righeOccupate[riga]) {
+          righeOccupate[riga] = [];
+        }
 
-            if (!isWeekend(data)) {
-            giorniConteggiati++;
-            }
+        for (let indice = segmento.start; indice <= segmento.end; indice++) {
+          righeOccupate[riga][indice] = true;
+        }
+
+        return { ...segmento, riga };
+      });
+  }
+
+  function getPartecipanti(item: Attivita) {
+    return item.persone.map((persona) => persona.nome).join(", ");
+  }
+
+  function getTitoloCommessa(item: Attivita) {
+    if (!item.commessa_id || !item.tipo_commessa) {
+      return "Attivita libera";
     }
 
-    return data;
+    const simbolo = SIMBOLO_TIPO[item.tipo_commessa] || "";
+    return `${simbolo} ${item.titolo_commessa || ""}`.trim();
+  }
+
+  function getSfondoAttivita(item: Attivita) {
+    const colori = item.persone
+      .map((persona) => persona.colore)
+      .filter(Boolean);
+
+    if (colori.length === 0) {
+      return "#5E9AD3";
     }
 
-    function isGiornoLavorativoAttivita(
-        giorno: Date,
-        dataInizio: Date,
-        giorni: number
-        ) {
-        if (isWeekend(giorno)) return false;
-
-        const fine = aggiungiGiorniLavorativi(dataInizio, giorni);
-
-        return (
-            normalizzaData(giorno) >= normalizzaData(dataInizio) &&
-            normalizzaData(giorno) <= normalizzaData(fine)
-        );
+    if (colori.length === 1) {
+      return colori[0];
     }
+
+    const ampiezza = 100 / colori.length;
+    const stop = colori.flatMap((colore, index) => {
+      const inizio = Math.round(index * ampiezza);
+      const fine = Math.round((index + 1) * ampiezza);
+
+      return [`${colore} ${inizio}%`, `${colore} ${fine}%`];
+    });
+
+    return `linear-gradient(135deg, ${stop.join(", ")})`;
+  }
 
   function normalizzaData(data: Date) {
     return new Date(data.getFullYear(), data.getMonth(), data.getDate());
@@ -395,7 +580,10 @@ export default function CalendarioAttivitaPage() {
           </button>
         </div>
 
-        <div className="bg-white border border-gray-200 shadow-sm rounded-sm overflow-hidden">
+        <div
+          className="bg-white border border-gray-200 shadow-sm rounded-sm overflow-hidden"
+          onWheel={gestisciCambioMeseWheel}
+        >
           <div className="px-4 py-3 border-b border-gray-200 bg-[#FAFAFA] flex justify-between items-center">
             <button
               type="button"
@@ -424,71 +612,146 @@ export default function CalendarioAttivitaPage() {
             </p>
           ) : (
             <div className="p-4">
-              <div className="grid grid-cols-7 border-t border-l border-gray-200">
-                {["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"].map(
-                  (giorno) => (
-                    <div
-                      key={giorno}
-                      className="border-r border-b border-gray-200 bg-[#FAFAFA] px-3 py-2 text-[12px] uppercase tracking-[0.12em] text-gray-400 font-medium"
-                    >
-                      {giorno}
-                    </div>
-                  )
-                )}
+              <div className="border-t border-l border-gray-200">
+                <div
+                  className="grid"
+                  style={{
+                    gridTemplateColumns: COLONNE_CALENDARIO,
+                  }}
+                >
+                  <div className="border-r border-b border-gray-200 bg-[#FAFAFA] px-1 py-2" />
+                  {["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"].map(
+                    (giorno) => (
+                      <div
+                        key={giorno}
+                        className="border-r border-b border-gray-200 bg-[#FAFAFA] px-2 py-2 text-[11px] uppercase text-gray-400 font-medium"
+                      >
+                        {giorno}
+                      </div>
+                    )
+                  )}
+                </div>
 
-                {giorniMese.map((giorno, index) => {
-                  const items = giorno ? attivitaDelGiorno(giorno) : [];
+                {settimaneCalendario.map((settimana, settimanaIndex) => {
+                  const segmenti = creaSegmentiSettimana(settimana);
+                  const numeroSettimana =
+                    getNumeroSettimanaCalendario(settimana);
+                  const numeroRighe =
+                    segmenti.length > 0
+                      ? Math.max(...segmenti.map((segmento) => segmento.riga)) + 1
+                      : 1;
+                  const altezzaSettimana = Math.max(145, 48 + numeroRighe * 58);
 
                   return (
                     <div
-                        key={index}
-                        className={`min-h-[145px] border-r border-b border-gray-200 p-2 ${
-                            giorno && isWeekend(giorno) ? "bg-gray-100" : "bg-white"
-                        }`}
+                      key={settimanaIndex}
+                      className="grid"
+                      style={{
+                        gridTemplateColumns: COLONNE_CALENDARIO,
+                        minHeight: altezzaSettimana,
+                      }}
                     >
-                      {giorno && (
-                        <>
-                          <p
-                            className={`text-[13px] font-medium mb-2 ${
-                                isWeekend(giorno) ? "text-gray-400" : "text-[#2B2F5E]"
-                            }`}
+                      <div className="flex items-center justify-center overflow-hidden border-r border-b border-gray-200 bg-[#FAFAFA] text-[#2B2F5E]">
+                        {numeroSettimana && (
+                          <span className="block rotate-90 text-[28px] font-semibold leading-none">
+                            {numeroSettimana}
+                          </span>
+                        )}
+                      </div>
+
+                      <div
+                        className="relative grid"
+                        style={{
+                          gridColumn: "2 / span 7",
+                          gridTemplateColumns: COLONNE_GIORNI_CALENDARIO,
+                          minHeight: altezzaSettimana,
+                        }}
+                      >
+                        {settimana.map((giorno, giornoIndex) => {
+                          const giornoMeseCorrente = isMeseCorrente(giorno);
+                          const giornoCorrente = isOggi(giorno);
+
+                          return (
+                            <div
+                              key={`${settimanaIndex}-${giornoIndex}`}
+                              className={`border-r border-b border-gray-200 p-2 ${
+                                !giornoMeseCorrente
+                                  ? "bg-[#FAFAFA]"
+                                  : isWeekend(giorno)
+                                    ? "bg-gray-100"
+                                    : "bg-white"
+                              } ${
+                                giornoCorrente
+                                  ? "relative"
+                                  : ""
+                              }`}
                             >
-                            {giorno.getDate()}
-                          </p>
+                              {giornoCorrente && (
+                                <span className="pointer-events-none absolute inset-0 z-20 border-2 border-[#D79D06]" />
+                              )}
 
-                          <div className="space-y-1">
-                            {items.flatMap((item) =>
-                              item.persone.map((persona) => (
-                                <button
-                                  type="button"
-                                  key={`${item.id}-${persona.id}`}
-                                  onClick={() => apriModificaAttivita(item)}
-                                  className="w-full text-left px-2 py-1 rounded-sm text-white text-[11px] leading-tight cursor-pointer hover:opacity-80 transition"
-                                  style={{
-                                    backgroundColor: persona.colore,
-                                  }}
-                                  title={`${item.titolo} - ${persona.nome}`}
-                                >
-                                  <div className="leading-tight">
-                                    <p>{persona.nome}</p>
+                              <p
+                                className={`text-[13px] font-medium ${
+                                  giornoCorrente
+                                    ? "text-[#D79D06]"
+                                    : !giornoMeseCorrente
+                                    ? "text-gray-300"
+                                    : isWeekend(giorno)
+                                      ? "text-gray-400"
+                                      : "text-[#2B2F5E]"
+                                }`}
+                              >
+                                {giorno.getDate()}
+                              </p>
+                            </div>
+                          );
+                        })}
 
-                                    <p>
-                                        {item.commessa_id && item.tipo_commessa
-                                        ? `${SIMBOLO_TIPO[item.tipo_commessa] || ""} ${
-                                            item.titolo_commessa || ""
-                                            }`
-                                        : "Attività libera"}
-                                    </p>
+                        <div
+                          className="pointer-events-none absolute left-0 right-0 top-9 grid gap-y-1 px-2"
+                          style={{
+                            gridTemplateColumns: COLONNE_GIORNI_CALENDARIO,
+                            gridTemplateRows: `repeat(${numeroRighe}, 54px)`,
+                          }}
+                        >
+                          {segmenti.map((segmento) => {
+                            const partecipanti =
+                              getPartecipanti(segmento.attivita) ||
+                              "Senza assegnazione";
+                            const titoloCommessa = getTitoloCommessa(segmento.attivita);
 
-                                    <p>{item.titolo}</p>
-                                  </div>
-
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        </>
-                      )}
+                            return (
+                              <button
+                                type="button"
+                                key={`${segmento.attivita.id}-${settimanaIndex}`}
+                                onClick={() =>
+                                  apriModificaAttivita(segmento.attivita)
+                                }
+                                className="pointer-events-auto mx-1 h-[52px] overflow-hidden rounded-sm px-2 py-1 text-left text-[11px] leading-tight text-white shadow-sm transition hover:opacity-85 cursor-pointer"
+                                style={{
+                                  gridColumn: `${segmento.start + 1} / ${
+                                    segmento.end + 2
+                                  }`,
+                                  gridRow: `${segmento.riga + 1}`,
+                                  background: getSfondoAttivita(segmento.attivita),
+                                  textShadow: "0 1px 1px rgba(0, 0, 0, 0.35)",
+                                }}
+                                title={`${partecipanti} - ${titoloCommessa} - ${segmento.attivita.titolo}`}
+                              >
+                                <span className="block truncate font-semibold">
+                                  {partecipanti}
+                                </span>
+                                <span className="block truncate">
+                                  {titoloCommessa}
+                                </span>
+                                <span className="block truncate">
+                                  {segmento.attivita.titolo}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   );
                 })}

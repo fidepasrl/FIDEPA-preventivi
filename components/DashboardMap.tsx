@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 
@@ -11,16 +12,70 @@ type CommessaMappa = {
   latitudine: number | null;
   longitudine: number | null;
   tipo_commessa: string | null;
+  priorita: Priorita | null;
 };
 
-const markerIcon = new L.Icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  iconRetinaUrl:
-    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-});
+type Priorita = "Urgente" | "Alta" | "Normale" | "Bassa" | "Terminato";
+
+const COLORE_PRIORITA: Record<Priorita, string> = {
+  Urgente: "#d96f4b",
+  Alta: "#d79d06",
+  Normale: "#5e9ad3",
+  Bassa: "#64b445",
+  Terminato: "#BFE3C0",
+};
+
+const PRIORITA_LEGENDA: Priorita[] = [
+  "Urgente",
+  "Alta",
+  "Normale",
+  "Bassa",
+  "Terminato",
+];
+
+function creaMarkerIcon(colore: string) {
+  return L.divIcon({
+    className: "commessa-marker",
+    html: `
+      <span style="
+        position: relative;
+        display: block;
+        width: 28px;
+        height: 28px;
+        background: ${colore};
+        border: 2px solid #ffffff;
+        border-radius: 50% 50% 50% 0;
+        box-shadow: 0 3px 10px rgba(43, 47, 94, 0.35);
+        transform: rotate(-45deg);
+      ">
+        <span style="
+          position: absolute;
+          top: 8px;
+          left: 8px;
+          width: 8px;
+          height: 8px;
+          background: #ffffff;
+          border-radius: 999px;
+          opacity: 0.95;
+        "></span>
+      </span>
+    `,
+    iconSize: [28, 40],
+    iconAnchor: [14, 34],
+    popupAnchor: [0, -32],
+  });
+}
+
+const markerIcons = Object.fromEntries(
+  Object.entries(COLORE_PRIORITA).map(([priorita, colore]) => [
+    priorita,
+    creaMarkerIcon(colore),
+  ])
+) as Record<Priorita, L.DivIcon>;
+
+function getMarkerIcon(priorita: Priorita | null) {
+  return priorita ? markerIcons[priorita] : markerIcons.Normale;
+}
 
 const CENTRO_AGRO: [number, number] = [40.745, 14.62];
 
@@ -58,7 +113,7 @@ export default function DashboardMap({
   );
 
   return (
-    <div className="w-full h-[570px] overflow-hidden rounded-sm border border-gray-200">
+    <div className="relative w-full h-[570px] overflow-hidden rounded-sm border border-gray-200">
       <MapContainer
         center={CENTRO_AGRO}
         zoom={11}
@@ -79,16 +134,43 @@ export default function DashboardMap({
               Number(commessa.latitudine),
               Number(commessa.longitudine),
             ]}
-            icon={markerIcon}
+            icon={getMarkerIcon(commessa.priorita)}
           >
             <Popup>
-              <strong>{commessa.titolo}</strong>
-              <br />
-              {commessa.posizione || "Posizione non indicata"}
+              <Link
+                href={`/commesse/${commessa.id}`}
+                prefetch={false}
+                className="block min-w-44 text-[#2B2F5E] no-underline hover:text-[#0b73c9]"
+              >
+                <strong>{commessa.titolo}</strong>
+                <span className="block mt-1 text-[13px] text-gray-600">
+                  {commessa.posizione || "Posizione non indicata"}
+                </span>
+              </Link>
             </Popup>
           </Marker>
         ))}
       </MapContainer>
+
+      <div className="pointer-events-none absolute bottom-3 left-3 z-[500] rounded-sm border border-gray-200 bg-white/95 px-3 py-2 shadow-sm">
+        <p className="mb-1 text-[12px] font-semibold text-[#2B2F5E]">
+          Priorita
+        </p>
+
+        <div className="flex flex-col gap-1">
+          {PRIORITA_LEGENDA.map((priorita) => (
+            <div key={priorita} className="flex items-center gap-2">
+              <span
+                className="h-3 w-3 rounded-full border border-white shadow-sm"
+                style={{ backgroundColor: COLORE_PRIORITA[priorita] }}
+              />
+              <span className="text-[12px] leading-none text-[#2B2F5E]">
+                {priorita}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
