@@ -40,6 +40,31 @@ type Attivita = {
   persone: Persona[];
 };
 
+type Appuntamento = {
+  id: string;
+  commessa_id: string | null;
+  tipo_commessa: string | null;
+  titolo_commessa: string | null;
+  data: string;
+  ora: string;
+  descrizione: string;
+};
+
+type AppuntamentoRow = {
+  id: string;
+  commessa_id: string | null;
+  data: string;
+  ora: string;
+  descrizione: string;
+  commesse?: {
+    titolo: string | null;
+    tipo_commessa: string | null;
+  }[] | {
+    titolo: string | null;
+    tipo_commessa: string | null;
+  } | null;
+};
+
 type ArgomentoRiunione = {
   id: string;
   testo: string;
@@ -72,9 +97,18 @@ const SIMBOLO_TIPO: Record<string, string> = {
   Concorso: "\u2691",
 };
 
+function getRelazioneSingola<T>(valore: T | T[] | null | undefined) {
+  if (Array.isArray(valore)) {
+    return valore[0] || null;
+  }
+
+  return valore || null;
+}
+
 export default function Home() {
   const [aggiornamenti, setAggiornamenti] = useState<Aggiornamento[]>([]);
   const [attivita, setAttivita] = useState<Attivita[]>([]);
+  const [appuntamenti, setAppuntamenti] = useState<Appuntamento[]>([]);
   const [argomenti, setArgomenti] = useState<ArgomentoRiunione[]>([]);
   const [listaStudio, setListaStudio] = useState<VoceStudio[]>([]);
   const [commesseMappa, setCommesseMappa] = useState<CommessaMappa[]>([]);
@@ -119,6 +153,7 @@ export default function Home() {
     await Promise.all([
       caricaAggiornamenti(),
       caricaAttivita(),
+      caricaAppuntamenti(),
       caricaArgomenti(),
       caricaListaStudio(),
       caricaCommesseMappa(),
@@ -216,6 +251,50 @@ export default function Home() {
       })) || [];
 
     setAttivita(normalizzate);
+  }
+
+  async function caricaAppuntamenti() {
+    const { data, error } = await supabase
+      .from("appuntamenti_commesse")
+      .select(
+        `
+        id,
+        commessa_id,
+        data,
+        ora,
+        descrizione,
+        commesse (
+          titolo,
+          tipo_commessa
+        )
+      `
+      )
+      .order("data", { ascending: true })
+      .order("ora", { ascending: true });
+
+    if (error) {
+      console.error(error);
+      setAppuntamenti([]);
+      return;
+    }
+
+    const righe = (data || []) as AppuntamentoRow[];
+
+    const normalizzati = righe.map((item) => {
+      const commessa = getRelazioneSingola(item.commesse);
+
+      return {
+        id: item.id,
+        commessa_id: item.commessa_id,
+        tipo_commessa: commessa?.tipo_commessa || null,
+        titolo_commessa: commessa?.titolo || null,
+        data: item.data,
+        ora: item.ora,
+        descrizione: item.descrizione,
+      };
+    });
+
+    setAppuntamenti(normalizzati);
   }
 
   async function caricaArgomenti() {
@@ -460,6 +539,7 @@ export default function Home() {
               <Link href="/attivita/calendario" className="block">
                 <DashboardActivityCalendar
                   attivita={attivita}
+                  appuntamenti={appuntamenti}
                   offsetGiorni={offsetCalendarioDashboard}
                   setOffsetGiorni={setOffsetCalendarioDashboard}
                 />
@@ -637,17 +717,6 @@ export default function Home() {
 
             </div>
 
-            <Card title="Spotify studio">
-              <div className="h-[180px] bg-[#FAFAFA] border border-dashed border-gray-300 rounded-sm flex flex-col items-center justify-center text-center">
-                <p className="text-[13px] uppercase tracking-[0.2em] text-gray-400">
-                  Spotify web player
-                </p>
-
-                <p className="mt-2 text-[15px] text-[#2B2F5E]">
-                  Integrazione da sviluppare
-                </p>
-              </div>
-            </Card>
           </>
         )}
       </div>

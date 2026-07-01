@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import LayoutApp from "@/components/LayoutApp";
+import ImportoInput from "@/components/ImportoInput";
 import { supabase } from "@/lib/supabase";
+import { parseImporto } from "@/lib/importi";
 import {
   DndContext,
   DragEndEvent,
@@ -284,12 +286,8 @@ export default function CommessePage() {
           form.tipo_commessa === "Gara" || form.tipo_commessa === "Concorso"
             ? form.url.trim() || null
             : null,
-        importo_lavori: form.importo_lavori
-          ? Number(form.importo_lavori)
-          : 0,
-        importo_commessa: form.importo_commessa
-          ? Number(form.importo_commessa)
-          : 0,
+        importo_lavori: parseImporto(form.importo_lavori),
+        importo_commessa: parseImporto(form.importo_commessa),
       })
       .select()
       .single();
@@ -517,16 +515,14 @@ export default function CommessePage() {
                 </div>
               )}
 
-              <Campo
+              <CampoImporto
                 label="Importo lavori"
-                type="number"
                 value={form.importo_lavori}
                 onChange={(value) => aggiornaCampo("importo_lavori", value)}
               />
 
-              <Campo
+              <CampoImporto
                 label="Importo commessa"
-                type="number"
                 value={form.importo_commessa}
                 onChange={(value) => aggiornaCampo("importo_commessa", value)}
               />
@@ -594,6 +590,26 @@ function Campo({
         onChange={(e) => onChange(e.target.value)}
         className="w-full border border-gray-300 rounded-md px-4 py-3 bg-transparent outline-none transition focus:bg-white focus:border-[#64B445] focus:shadow-sm"
       />
+    </div>
+  );
+}
+
+function CampoImporto({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium mb-2 text-[#2B2F5E]">
+        {label}
+      </label>
+
+      <ImportoInput value={value} onChange={onChange} />
     </div>
   );
 }

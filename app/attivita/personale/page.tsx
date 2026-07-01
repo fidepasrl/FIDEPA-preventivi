@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import LayoutApp from "@/components/LayoutApp";
 import { supabase } from "@/lib/supabase";
 
@@ -10,6 +10,8 @@ type Persona = {
   colore: string;
   attivo: boolean;
 };
+
+type RelazioneSupabase<T> = T | T[] | null | undefined;
 
 type AttivitaPersona = {
   id: string;
@@ -23,10 +25,30 @@ type AttivitaPersona = {
   titolo_commessa: string | null;
 };
 
+type SegmentoAttivitaPersona = {
+  start: number;
+  end: number;
+  left: number;
+  width: number;
+};
+
+type AttivitaVisibilePersona = {
+  item: AttivitaPersona;
+  segmento: SegmentoAttivitaPersona;
+};
+
 const FORM_INIZIALE = {
   nome: "",
   colore: "#5E9AD3",
 };
+
+const NUMERO_GIORNI = 11;
+const INDICE_GIORNO_CORRENTE = Math.floor(NUMERO_GIORNI / 2);
+const LARGHEZZA_GIORNO = 120;
+const ALTEZZA_RIGA_ATTIVITA = 38;
+const ALTEZZA_BARRA_ATTIVITA = 34;
+const INTERVALLO_CAMBIO_GIORNI_WHEEL = 450;
+const SOGLIA_CAMBIO_GIORNI_WHEEL = 35;
 
 const SIMBOLO_TIPO: Record<string, string> = {
   Pubblica: "■",
@@ -34,6 +56,127 @@ const SIMBOLO_TIPO: Record<string, string> = {
   Gara: "▲",
   Concorso: "⚑",
 };
+
+function getRelazioneSingola<T>(valore: RelazioneSupabase<T>) {
+  if (Array.isArray(valore)) {
+    return valore[0] || null;
+  }
+
+  return valore || null;
+}
+
+function giorniLavorativiCentrati(numeroGiorni: number, offsetGiorni: number) {
+  const centro = spostaGiorniLavorativi(new Date(), offsetGiorni);
+  const precedenti: Date[] = [];
+  let cursore = centro;
+
+  while (precedenti.length < INDICE_GIORNO_CORRENTE) {
+    cursore = spostaGiorniLavorativi(cursore, -1);
+    precedenti.unshift(cursore);
+  }
+
+  const giorni = [...precedenti, centro];
+  cursore = centro;
+
+  while (giorni.length < numeroGiorni) {
+    cursore = spostaGiorniLavorativi(cursore, 1);
+    giorni.push(cursore);
+  }
+
+  return giorni;
+}
+
+function spostaGiorniLavorativi(dataInizio: Date, delta: number) {
+  const data = normalizzaData(dataInizio);
+  const passo = delta >= 0 ? 1 : -1;
+  let rimanenti = Math.abs(delta);
+
+  while (rimanenti > 0) {
+    data.setDate(data.getDate() + passo);
+
+    if (!isWeekend(data)) {
+      rimanenti--;
+    }
+  }
+
+  return new Date(data);
+}
+
+function getGiorniLavorativiAttivita(item: AttivitaPersona) {
+  const giorniTotali = Math.max(1, Number(item.giorni || 1));
+  const giorni: Date[] = [];
+  const corrente = parseDataLocale(item.data_inizio);
+
+  while (giorni.length < giorniTotali) {
+    if (!isWeekend(corrente)) {
+      giorni.push(new Date(corrente));
+    }
+
+    corrente.setDate(corrente.getDate() + 1);
+  }
+
+  return giorni;
+}
+
+function indiceGiorno(data: Date, giorni: Date[]) {
+  const chiave = normalizzaData(data).getTime();
+  return giorni.findIndex((giorno) => giorno.getTime() === chiave);
+}
+
+function parseDataLocale(data: string) {
+  const [anno, mese, giorno] = data.split("-").map(Number);
+  return new Date(anno, mese - 1, giorno);
+}
+
+function normalizzaData(data: Date) {
+  return new Date(data.getFullYear(), data.getMonth(), data.getDate());
+}
+
+function isWeekend(data: Date) {
+  const giorno = data.getDay();
+  return giorno === 0 || giorno === 6;
+}
+
+function isOggi(data: Date) {
+  const oggi = normalizzaData(new Date());
+  return normalizzaData(data).getTime() === oggi.getTime();
+}
+
+function assegnaRigheAttivitaPersonale(voci: AttivitaVisibilePersona[]) {
+  const righe: { start: number; end: number }[][] = [];
+
+  return [...voci]
+    .sort(
+      (a, b) =>
+        a.segmento.start - b.segmento.start ||
+        b.segmento.end - a.segmento.end
+    )
+    .map((voce) => {
+      let riga = 0;
+
+      while (
+        righe[riga]?.some(
+          (esistente) =>
+            voce.segmento.start <= esistente.end &&
+            voce.segmento.end >= esistente.start
+        )
+      ) {
+        riga++;
+      }
+
+      if (!righe[riga]) righe[riga] = [];
+
+      righe[riga].push({
+        start: voce.segmento.start,
+        end: voce.segmento.end,
+      });
+
+      return {
+        ...voce,
+        riga,
+      };
+    });
+}
 
 export default function PersonalePage() {
   const [personale, setPersonale] = useState<Persona[]>([]);
@@ -43,9 +186,52 @@ export default function PersonalePage() {
   const [caricamento, setCaricamento] = useState(true);
   const [personaDaEliminare, setPersonaDaEliminare] =
     useState<Persona | null>(null);
+  const [offsetGiorni, setOffsetGiorni] = useState(0);
+  const contenitoreTabelleRef = useRef<HTMLDivElement | null>(null);
+  const ultimoCambioGiorniWheel = useRef(0);
+
+  const giorniVisualizzati = useMemo(
+    () => giorniLavorativiCentrati(NUMERO_GIORNI, offsetGiorni),
+    [offsetGiorni]
+  );
+
+  const indiceOggi = giorniVisualizzati.findIndex((giorno) => isOggi(giorno));
 
   useEffect(() => {
     caricaDati();
+  }, []);
+
+  useEffect(() => {
+    const contenitore = contenitoreTabelleRef.current;
+    if (!contenitore) return;
+
+    function gestisciCambioGiorniWheel(event: WheelEvent) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (Math.abs(event.deltaY) < SOGLIA_CAMBIO_GIORNI_WHEEL) {
+        return;
+      }
+
+      const adesso = Date.now();
+      if (
+        adesso - ultimoCambioGiorniWheel.current <
+        INTERVALLO_CAMBIO_GIORNI_WHEEL
+      ) {
+        return;
+      }
+
+      ultimoCambioGiorniWheel.current = adesso;
+      setOffsetGiorni((corrente) => corrente + (event.deltaY > 0 ? 1 : -1));
+    }
+
+    contenitore.addEventListener("wheel", gestisciCambioGiorniWheel, {
+      passive: false,
+    });
+
+    return () => {
+      contenitore.removeEventListener("wheel", gestisciCambioGiorniWheel);
+    };
   }, []);
 
   async function caricaDati() {
@@ -81,19 +267,29 @@ export default function PersonalePage() {
     );
 
     const normalizzate =
-      attivitaData?.map((item: any) => ({
-        id: item.attivita_commesse?.id,
-        titolo: item.attivita_commesse?.titolo,
-        data_inizio: item.attivita_commesse?.data_inizio,
-        giorni: item.attivita_commesse?.giorni,
-        persona_id: item.persona_id,
-        persona_nome: item.personale?.nome,
-        persona_colore: item.personale?.colore,
-        tipo_commessa:
-        item.attivita_commesse?.commesse?.tipo_commessa || null,
-        titolo_commessa:
-        item.attivita_commesse?.commesse?.titolo || null,
-      })) || [];
+      attivitaData
+        ?.map((item: any) => {
+          const persona = getRelazioneSingola(item.personale);
+          const attivitaCommessa = getRelazioneSingola(item.attivita_commesse);
+          const commessa = getRelazioneSingola(attivitaCommessa?.commesse);
+
+          if (!attivitaCommessa?.id || !attivitaCommessa?.data_inizio) {
+            return null;
+          }
+
+          return {
+            id: attivitaCommessa.id,
+            titolo: attivitaCommessa.titolo,
+            data_inizio: attivitaCommessa.data_inizio,
+            giorni: attivitaCommessa.giorni,
+            persona_id: item.persona_id,
+            persona_nome: persona?.nome,
+            persona_colore: persona?.colore,
+            tipo_commessa: commessa?.tipo_commessa || null,
+            titolo_commessa: commessa?.titolo || null,
+          };
+        })
+        .filter((item): item is AttivitaPersona => Boolean(item)) || [];
 
     setAttivita(normalizzate);
     setCaricamento(false);
@@ -174,24 +370,28 @@ export default function PersonalePage() {
         setPersonaDaEliminare(null);
     }
 
-    function prossimiGiorni() {
-        const oggi = new Date();
-        oggi.setHours(0, 0, 0, 0);
+    function spostaVistaGiorni(delta: number) {
+        setOffsetGiorni((corrente) => corrente + delta);
+    }
 
-        const giorni: Date[] = [];
-        const giorno = new Date(oggi);
+    function getSegmentoAttivita(item: AttivitaPersona) {
+        const indici = getGiorniLavorativiAttivita(item)
+            .map((giorno) => indiceGiorno(giorno, giorniVisualizzati))
+            .filter((indice) => indice >= 0);
 
-        while (giorni.length < 11) {
-            const giornoSettimana = giorno.getDay();
-
-            if (giornoSettimana !== 0 && giornoSettimana !== 6) {
-            giorni.push(new Date(giorno));
-            }
-
-            giorno.setDate(giorno.getDate() + 1);
+        if (indici.length === 0) {
+            return null;
         }
 
-        return giorni;
+        const start = Math.min(...indici);
+        const end = Math.max(...indici);
+
+        return {
+            start,
+            end,
+            left: start * LARGHEZZA_GIORNO,
+            width: (end - start + 1) * LARGHEZZA_GIORNO,
+        };
     }
 
     function formattaGiorno(data: Date) {
@@ -200,36 +400,6 @@ export default function PersonalePage() {
             month: "2-digit",
         });
         }
-
-        function differenzaGiorni(dataInizio: string) {
-        const oggi = new Date();
-        oggi.setHours(0, 0, 0, 0);
-
-        const data = new Date(dataInizio);
-        data.setHours(0, 0, 0, 0);
-
-        return Math.round((data.getTime() - oggi.getTime()) / 86400000);
-    }
-
-    function differenzaGiorniLavorativi(dataInizio: string) {
-        const giorni = prossimiGiorni();
-        const target = new Date(dataInizio);
-        target.setHours(0, 0, 0, 0);
-
-        return giorni.findIndex(
-            (giorno) => giorno.getTime() === target.getTime()
-        );
-    }
-
-  function giorniDaOggi(dataInizio: string) {
-    const oggi = new Date();
-    const data = new Date(dataInizio);
-
-    const base = new Date(oggi.getFullYear(), oggi.getMonth(), oggi.getDate());
-    const target = new Date(data.getFullYear(), data.getMonth(), data.getDate());
-
-    return Math.round((target.getTime() - base.getTime()) / 86400000);
-  }
 
   return (
     <LayoutApp>
@@ -243,13 +413,33 @@ export default function PersonalePage() {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setModaleAperta(true)}
-            className="bg-[#64B445] text-white w-12 h-12 rounded-md text-2xl font-light hover:bg-[#5AA03E] hover:scale-105 transition flex items-center justify-center shadow-sm cursor-pointer"
-          >
-            +
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => spostaVistaGiorni(-1)}
+              className="border border-gray-300 text-[#2B2F5E] w-10 h-10 rounded-md bg-white hover:bg-[#e8e8e8] hover:text-[#D79D06] transition cursor-pointer text-2xl leading-none"
+              aria-label="Giorni precedenti"
+            >
+              &lsaquo;
+            </button>
+
+            <button
+              type="button"
+              onClick={() => spostaVistaGiorni(1)}
+              className="border border-gray-300 text-[#2B2F5E] w-10 h-10 rounded-md bg-white hover:bg-[#e8e8e8] hover:text-[#D79D06] transition cursor-pointer text-2xl leading-none"
+              aria-label="Giorni successivi"
+            >
+              &rsaquo;
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setModaleAperta(true)}
+              className="bg-[#64B445] text-white w-12 h-12 rounded-md text-2xl font-light hover:bg-[#5AA03E] hover:scale-105 transition flex items-center justify-center shadow-sm cursor-pointer"
+            >
+              +
+            </button>
+          </div>
         </div>
 
         {caricamento ? (
@@ -257,11 +447,35 @@ export default function PersonalePage() {
             Caricamento personale...
           </p>
         ) : (
-          <div className="space-y-6">
+          <div ref={contenitoreTabelleRef} className="space-y-4">
             {personale.map((persona) => {
               const attivitaPersona = attivita.filter(
                 (item) => item.persona_id === persona.id
               );
+              const attivitaVisibiliPersona = attivitaPersona
+                .map((item) => ({
+                  item,
+                  segmento: getSegmentoAttivita(item),
+                }))
+                .filter(
+                  (
+                    voce
+                  ): voce is {
+                    item: AttivitaPersona;
+                    segmento: NonNullable<
+                      ReturnType<typeof getSegmentoAttivita>
+                    >;
+                  } => Boolean(voce.segmento)
+                );
+              const barrePersona = assegnaRigheAttivitaPersonale(
+                attivitaVisibiliPersona
+              );
+              const numeroRighePersona =
+                barrePersona.length > 0
+                  ? Math.max(...barrePersona.map((voce) => voce.riga)) + 1
+                  : 1;
+              const altezzaCorpoPersona =
+                numeroRighePersona * ALTEZZA_RIGA_ATTIVITA;
 
               return (
                 <div
@@ -312,57 +526,73 @@ export default function PersonalePage() {
                     </div>
                   </div>
 
-                  <div className="p-4 overflow-x-auto">
+                  <div className="px-4 py-3 overflow-x-auto">
                     {attivitaPersona.length === 0 ? (
                         <p className="text-sm text-gray-400">
                         Nessuna attività assegnata.
+                        </p>
+                    ) : attivitaVisibiliPersona.length === 0 ? (
+                        <p className="text-sm text-gray-400">
+                        Nessuna attivit&agrave; nei giorni visualizzati.
                         </p>
                     ) : (
                         <div
                         className="relative"
                         style={{
-                            minWidth: `${11 * 120}px`,
+                            minWidth: `${NUMERO_GIORNI * LARGHEZZA_GIORNO}px`,
                         }}
                         >
-                        <div className="grid grid-cols-11 border-b border-gray-200 mb-3">
-                            {prossimiGiorni().map((giorno) => (
+                        <div
+                            className="grid border-b border-gray-200 mb-2"
+                            style={{
+                                gridTemplateColumns: `repeat(${NUMERO_GIORNI}, minmax(0, 1fr))`,
+                            }}
+                        >
+                            {giorniVisualizzati.map((giorno) => (
                             <div
                                 key={giorno.toISOString()}
-                                className="text-[11px] uppercase tracking-[0.08em] text-gray-400 font-medium py-2 border-r border-gray-100 text-center"
+                                className={`text-[11px] uppercase tracking-[0.08em] font-medium py-2 border-r border-gray-100 text-center ${
+                                  isOggi(giorno)
+                                    ? "border-2 border-[#D79D06] text-[#D79D06]"
+                                    : "text-gray-400"
+                                }`}
                             >
                                 {formattaGiorno(giorno)}
                             </div>
                             ))}
                         </div>
 
-                        <div className="space-y-2">
-                            {attivitaPersona.map((item) => {
-                            const offset = differenzaGiorniLavorativi(item.data_inizio);
-                            const larghezzaGiorno = 120;
+                        <div
+                            className="relative"
+                            style={{ height: altezzaCorpoPersona }}
+                        >
+                            {indiceOggi >= 0 && (
+                                <div
+                                    className="pointer-events-none absolute top-0 bottom-0 z-0 border-2 border-[#D79D06]"
+                                    style={{
+                                        left: indiceOggi * LARGHEZZA_GIORNO,
+                                        width: LARGHEZZA_GIORNO,
+                                    }}
+                                />
+                            )}
 
-                            if (offset === -1) return null;
-
-                            const left = Math.max(0, offset * larghezzaGiorno);
-                            const width = Math.max(
-                                larghezzaGiorno,
-                                Number(item.giorni || 1) * larghezzaGiorno
-                            );
-
-                            const fuoriVista =
-                                offset > 10 || offset + Number(item.giorni || 1) < 0;
-
-                            if (fuoriVista) return null;
-
+                            <div
+                                className="relative z-10"
+                                style={{ height: altezzaCorpoPersona }}
+                            >
+                            {barrePersona.map(({ item, segmento, riga }) => {
                             return (
                                 <div
                                 key={`${persona.id}-${item.id}`}
-                                className="relative h-11"
-                                >
-                                <div
-                                    className="absolute top-1 h-9 rounded-sm text-white text-[12px] px-3 flex items-center truncate shadow-sm"
+                                    className="absolute rounded-sm text-white text-[12px] px-3 flex items-center truncate shadow-sm"
                                     style={{
-                                    left,
-                                    width,
+                                    left: segmento.left,
+                                    width: Math.max(
+                                        LARGHEZZA_GIORNO,
+                                        segmento.width
+                                    ),
+                                    top: riga * ALTEZZA_RIGA_ATTIVITA,
+                                    height: ALTEZZA_BARRA_ATTIVITA,
                                     backgroundColor: persona.colore,
                                     }}
                                     title={`${item.titolo} - ${item.giorni} giorni`}
@@ -381,10 +611,10 @@ export default function PersonalePage() {
                                         </p>
                                     </div>
                                 </div>
-                                </div>
                             );
                             })}
                         </div>
+                    </div>
                     </div>
                     )}
                     </div>

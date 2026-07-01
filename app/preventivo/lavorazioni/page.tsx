@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from "react";
 import LayoutApp from "@/components/LayoutApp";
+import ImportoInput from "@/components/ImportoInput";
 import { supabase } from "@/lib/supabase";
+import {
+  finalizzaInputImporto,
+  formattaNumeroItaliano,
+  parseImporto,
+} from "@/lib/importi";
 
 import {
   DndContext,
@@ -39,7 +45,7 @@ type Lavorazione = {
   categoria: string;
   nome: string;
   descrizione: string;
-  importo: number;
+  importo: number | string;
   ordine: number;
   categoria_ordine: number;
 };
@@ -86,7 +92,7 @@ export default function LavorazioniPage() {
           ...lav,
           macrocategoria: lav.macrocategoria || "Progettazione",
           descrizione: lav.descrizione || "",
-          importo: Number(lav.importo || 0),
+          importo: finalizzaInputImporto(lav.importo),
           ordine: lav.ordine || 0,
           categoria_ordine: lav.categoria_ordine || 0,
         }))
@@ -256,7 +262,10 @@ export default function LavorazioniPage() {
       .select();
 
     if (!error && data) {
-      setLavorazioni((correnti) => [...correnti, data[0]]);
+      setLavorazioni((correnti) => [
+        ...correnti,
+        { ...data[0], importo: finalizzaInputImporto(data[0].importo) },
+      ]);
       setAperta(data[0].id);
     }
   }
@@ -283,7 +292,10 @@ export default function LavorazioniPage() {
       .select();
 
     if (!error && data) {
-      setLavorazioni((correnti) => [...correnti, data[0]]);
+      setLavorazioni((correnti) => [
+        ...correnti,
+        { ...data[0], importo: finalizzaInputImporto(data[0].importo) },
+      ]);
       setAperta(data[0].id);
     }
   }
@@ -345,7 +357,7 @@ export default function LavorazioniPage() {
               categoria: lavorazione.categoria,
               nome: lavorazione.nome,
               descrizione: lavorazione.descrizione,
-              importo: lavorazione.importo,
+              importo: parseImporto(lavorazione.importo),
               ordine: lavorazione.ordine,
               categoria_ordine: lavorazione.categoria_ordine,
             })
@@ -359,11 +371,8 @@ export default function LavorazioniPage() {
     }
   }
 
-  function formatEuro(valore: number) {
-    return Number(valore || 0).toLocaleString("it-IT", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
+  function formatEuro(valore: number | string) {
+    return formattaNumeroItaliano(valore);
   }
 
   if (loading) {
@@ -668,7 +677,7 @@ function LavorazioneCard({
     valore: string | number
   ) => void;
   setLavorazioneDaEliminare: (lav: Lavorazione) => void;
-  formatEuro: (value: number) => string;
+  formatEuro: (value: number | string) => string;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({ id: lav.id });
@@ -727,13 +736,10 @@ function LavorazioneCard({
               onChange={(value) => aggiornaCampo(lav.id, "nome", value)}
             />
 
-            <Campo
+            <CampoImporto
               label="Importo"
-              type="number"
               value={String(lav.importo)}
-              onChange={(value) =>
-                aggiornaCampo(lav.id, "importo", Number(value))
-              }
+              onChange={(value) => aggiornaCampo(lav.id, "importo", value)}
             />
 
             <div>
@@ -791,6 +797,26 @@ function Campo({
         onChange={(e) => onChange(e.target.value)}
         className="w-full border border-gray-300 rounded-md px-4 py-3 bg-transparent outline-none transition focus:bg-white focus:border-[#64B445] focus:shadow-sm text-[14px] text-[#2B2F5E]"
       />
+    </div>
+  );
+}
+
+function CampoImporto({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium mb-2 text-[#2B2F5E]">
+        {label}
+      </label>
+
+      <ImportoInput value={value} onChange={onChange} />
     </div>
   );
 }

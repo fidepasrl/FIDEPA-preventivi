@@ -6,6 +6,7 @@ import { pdf } from "@react-pdf/renderer";
 import { saveAs } from "file-saver";
 import PreventivoPDF from "@/components/pdf/PreventivoPDF";
 import { supabase } from "@/lib/supabase";
+import { finalizzaInputImporto, parseImporto } from "@/lib/importi";
 
 type Preventivo = {
   numero: string;
@@ -51,8 +52,8 @@ export default function ArchivioPreventivi() {
     setCaricamento(false);
   }
 
-  function formatEuro(valore: number) {
-    return Number(valore || 0).toLocaleString("it-IT", {
+  function formatEuro(valore: number | string) {
+    return parseImporto(valore).toLocaleString("it-IT", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
@@ -120,7 +121,7 @@ export default function ArchivioPreventivi() {
       JSON.stringify(
         lavorazioni.map((voce: any) => ({
           id: voce.id,
-          importo: Number(voce.importo || 0),
+          importo: parseImporto(voce.importo),
         }))
       )
     );
@@ -129,7 +130,7 @@ export default function ArchivioPreventivi() {
       "preventivoNuovoStep3",
       JSON.stringify({
         scontoPercentuale: "",
-        scontoImporto: String(preventivo.sconto || ""),
+        scontoImporto: finalizzaInputImporto(preventivo.sconto),
         pagamento: preventivo.pagamento || {
           anticipo: 5,
           progettazione: 0,

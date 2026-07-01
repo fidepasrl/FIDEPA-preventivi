@@ -24,6 +24,10 @@ export default function AppSidebar() {
     pathname.startsWith("/rubrica")
   );
 
+  const [requisitiOpen, setRequisitiOpen] = useState(
+    pathname.startsWith("/requisiti")
+  );
+
   const [confermaUscita, setConfermaUscita] = useState<string | null>(null);
 
   const [consiglio, setConsiglio] = useState<string>("");
@@ -242,7 +246,94 @@ export default function AppSidebar() {
           </div>
         )}
 
-        <div className="menu-item-disabled">
+        <button
+          type="button"
+          onClick={() => setRequisitiOpen((prev) => !prev)}
+          className="menu-item-button"
+        >
+          <span className="flex items-center gap-3">
+            <span>&#9873;</span>
+            Gare d&apos;appalto
+          </span>
+
+          <span
+            className={`transition-transform ${
+              requisitiOpen ? "rotate-180" : ""
+            }`}
+          >
+            ^
+          </span>
+          <span className="hidden">
+          <span>â—Ž</span>
+          Gare d&apos;appalto
+          </span>
+        </button>
+
+        {requisitiOpen && (
+          <div className="submenu">
+            <button
+              type="button"
+              onClick={() => gestisciNavigazione("/requisiti/commesse")}
+              className={
+                pathname === "/requisiti/commesse"
+                  ? "submenu-item-active"
+                  : "submenu-item"
+              }
+            >
+              Lista commesse
+            </button>
+
+            <button
+              type="button"
+              onClick={() => gestisciNavigazione("/requisiti/categorie")}
+              className={
+                pathname === "/requisiti/categorie"
+                  ? "submenu-item-active"
+                  : "submenu-item"
+              }
+            >
+              Categorie
+            </button>
+
+            <button
+              type="button"
+              onClick={() => gestisciNavigazione("/requisiti/verifica")}
+              className={
+                pathname === "/requisiti/verifica"
+                  ? "submenu-item-active"
+                  : "submenu-item"
+              }
+            >
+              Verifica gara
+            </button>
+
+            <button
+              type="button"
+              onClick={() => gestisciNavigazione("/requisiti/preparazione")}
+              className={
+                pathname === "/requisiti/preparazione"
+                  ? "submenu-item-active"
+                  : "submenu-item"
+              }
+            >
+              Preparazione
+            </button>
+
+            <button
+              type="button"
+              onClick={() => gestisciNavigazione("/requisiti/archivio")}
+              className={
+                pathname === "/requisiti/archivio"
+                  ? "submenu-item-active"
+                  : "submenu-item"
+              }
+            >
+              Archivio gare
+            </button>
+          </div>
+        )}
+
+        <div className="hidden">
           <span>◎</span>
           Requisiti di gara
         </div>
@@ -309,7 +400,7 @@ export default function AppSidebar() {
         )}
 
         <div className="text-xs text-[#2B2F5E]/60">
-          Versione 2.1.2 - Creato da Antonio Carbone
+          Versione 2.2.0 - Creato da Antonio Carbone
         </div>
       </div>
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import LayoutApp from "@/components/LayoutApp";
 import { supabase } from "@/lib/supabase";
+import { formattaEuro } from "@/lib/importi";
 
 type Lavorazione = {
   id: string;
@@ -11,7 +12,7 @@ type Lavorazione = {
   categoria_ordine: number | null;
   nome: string;
   descrizione: string | null;
-  importo: number;
+  importo: number | string;
   ordine: number | null;
 };
 
@@ -235,14 +236,7 @@ export default function LavorazioniPreventivo() {
                                   </div>
 
                                   <p className="text-[14px] text-[#D79D06] whitespace-nowrap">
-                                    €{" "}
-                                    {Number(voce.importo).toLocaleString(
-                                      "it-IT",
-                                      {
-                                        minimumFractionDigits: 2,
-                                        maximumFractionDigits: 2,
-                                      }
-                                    )}
+                                    {formattaEuro(voce.importo)}
                                   </p>
                                 </div>
                               </label>

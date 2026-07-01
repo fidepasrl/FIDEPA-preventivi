@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import LayoutApp from "@/components/LayoutApp";
+import ImportoInput from "@/components/ImportoInput";
 import { supabase } from "@/lib/supabase";
+import { finalizzaInputImporto, parseImporto } from "@/lib/importi";
 
 type Priorita = "Urgente" | "Alta" | "Normale" | "Bassa" | "Terminato";
 type TipoCommessa = "Pubblica" | "Privata" | "Gara" | "Concorso";
@@ -33,8 +35,8 @@ type Commessa = {
   tipo_commessa: TipoCommessa;
   priorita: Priorita;
   url: string | null;
-  importo_lavori: number | null;
-  importo_commessa: number | null;
+  importo_lavori: number | string | null;
+  importo_commessa: number | string | null;
   data_inizio: string | null;
   data_fine: string | null;
 };
@@ -192,7 +194,11 @@ export default function DettaglioCommessaPage() {
             .single();
 
         if (!error && data) {
-            setCommessa(data);
+            setCommessa({
+              ...data,
+              importo_lavori: finalizzaInputImporto(data.importo_lavori),
+              importo_commessa: finalizzaInputImporto(data.importo_commessa),
+            });
 
             if (data.cliente_id) {
                 const { data: clienteData } = await supabase
@@ -323,8 +329,8 @@ export default function DettaglioCommessaPage() {
           commessa.tipo_commessa === "Concorso"
             ? commessa.url || null
             : null,
-        importo_lavori: Number(commessa.importo_lavori || 0),
-        importo_commessa: Number(commessa.importo_commessa || 0),
+        importo_lavori: parseImporto(commessa.importo_lavori),
+        importo_commessa: parseImporto(commessa.importo_commessa),
         data_inizio: commessa.data_inizio || null,
         data_fine: dataFine,
       })
@@ -342,6 +348,8 @@ export default function DettaglioCommessaPage() {
       cliente_id: clienteFinale?.id || commessa.cliente_id,
       cliente_nome: clienteFinale?.cliente || commessa.cliente_nome,
       data_fine: dataFine,
+      importo_lavori: finalizzaInputImporto(commessa.importo_lavori),
+      importo_commessa: finalizzaInputImporto(commessa.importo_commessa),
     });
 
     await caricaElencoCommesse();
@@ -977,16 +985,14 @@ export default function DettaglioCommessaPage() {
                 </div>
               )}
 
-              <Campo
+              <CampoImporto
                 label="Importo lavori"
-                type="number"
                 value={String(commessa.importo_lavori || "")}
                 onChange={(value) => aggiornaCampo("importo_lavori", value)}
               />
 
-              <Campo
+              <CampoImporto
                 label="Importo commessa"
-                type="number"
                 value={String(commessa.importo_commessa || "")}
                 onChange={(value) => aggiornaCampo("importo_commessa", value)}
               />
@@ -1100,6 +1106,26 @@ function Campo({
         onChange={(e) => onChange(e.target.value)}
         className="w-full border border-gray-300 rounded-md px-4 py-3 bg-transparent outline-none transition focus:bg-white focus:border-[#64B445] focus:shadow-sm"
       />
+    </div>
+  );
+}
+
+function CampoImporto({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium mb-2 text-[#2B2F5E]">
+        {label}
+      </label>
+
+      <ImportoInput value={value} onChange={onChange} />
     </div>
   );
 }

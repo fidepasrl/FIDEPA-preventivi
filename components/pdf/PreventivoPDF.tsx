@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Font,
 } from "@react-pdf/renderer";
+import { parseImporto } from "@/lib/importi";
 
 Font.registerHyphenationCallback((word) => [word]);
 
@@ -827,7 +828,7 @@ export default function PreventivoPDF({
                   </View>
 
                   <Text style={styles.workPrice}>
-                    € {formatEuro(Number(voce.importo || 0))}
+                    € {formatEuro(parseImporto(voce.importo))}
                   </Text>
                 </View>
               ))}

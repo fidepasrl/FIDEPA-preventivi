@@ -30,6 +30,16 @@ type Attivita = {
   persone: Persona[];
 };
 
+type Appuntamento = {
+  id: string;
+  commessa_id: string | null;
+  tipo_commessa: string | null;
+  titolo_commessa: string | null;
+  data: string;
+  ora: string;
+  descrizione: string;
+};
+
 type AttivitaRow = {
   id: string;
   titolo: string;
@@ -48,8 +58,30 @@ type AttivitaRow = {
   }[] | null;
 };
 
+type AppuntamentoRow = {
+  id: string;
+  commessa_id: string | null;
+  data: string;
+  ora: string;
+  descrizione: string;
+  commesse?: {
+    titolo: string | null;
+    tipo_commessa: string | null;
+  }[] | {
+    titolo: string | null;
+    tipo_commessa: string | null;
+  } | null;
+};
+
 type SegmentoCalendario = {
+  tipo: "attivita";
   attivita: Attivita;
+  start: number;
+  end: number;
+  riga: number;
+} | {
+  tipo: "appuntamento";
+  appuntamento: Appuntamento;
   start: number;
   end: number;
   riga: number;
@@ -61,6 +93,15 @@ const FORM_INIZIALE = {
   data_inizio: new Date().toISOString().slice(0, 10),
   giorni: "1",
   persone_ids: [] as string[],
+};
+
+const VALORE_APPUNTAMENTO_LIBERO = "__attivita_libera__";
+
+const FORM_APPUNTAMENTO_INIZIALE = {
+  commessa_id: VALORE_APPUNTAMENTO_LIBERO,
+  data: new Date().toISOString().slice(0, 10),
+  ora: "09:00",
+  descrizione: "",
 };
 
 const COLONNE_CALENDARIO =
@@ -77,16 +118,56 @@ function getRelazioneSingola<T>(valore: RelazioneSupabase<T>) {
   return valore || null;
 }
 
+function ordinaCommesseAlfabeticamente(lista: Commessa[]) {
+  return [...lista].sort((a, b) => {
+    const codiceA = a.codice?.trim();
+    const codiceB = b.codice?.trim();
+
+    if (codiceA && codiceB) {
+      const confrontoCodice = codiceB.localeCompare(codiceA, "it", {
+        numeric: true,
+        sensitivity: "base",
+      });
+
+      if (confrontoCodice !== 0) {
+        return confrontoCodice;
+      }
+    }
+
+    if (codiceA && !codiceB) return -1;
+    if (!codiceA && codiceB) return 1;
+
+    return a.titolo.localeCompare(b.titolo, "it", {
+      numeric: true,
+      sensitivity: "base",
+    });
+  });
+}
+
+function getEtichettaCommessa(commessa: Commessa) {
+  return commessa.codice
+    ? `${commessa.codice} | ${commessa.titolo}`
+    : commessa.titolo;
+}
+
 export default function CalendarioAttivitaPage() {
   const [meseCorrente, setMeseCorrente] = useState(new Date());
   const [commesse, setCommesse] = useState<Commessa[]>([]);
   const [personale, setPersonale] = useState<Persona[]>([]);
   const [attivita, setAttivita] = useState<Attivita[]>([]);
+  const [appuntamenti, setAppuntamenti] = useState<Appuntamento[]>([]);
   const [form, setForm] = useState(FORM_INIZIALE);
+  const [formAppuntamento, setFormAppuntamento] = useState(
+    FORM_APPUNTAMENTO_INIZIALE
+  );
 
   const [modaleAperta, setModaleAperta] = useState(false);
   const [attivitaInModifica, setAttivitaInModifica] =
     useState<Attivita | null>(null);
+  const [modaleAppuntamentoAperta, setModaleAppuntamentoAperta] =
+    useState(false);
+  const [appuntamentoInModifica, setAppuntamentoInModifica] =
+    useState<Appuntamento | null>(null);
 
   const [caricamento, setCaricamento] = useState(true);
   const ultimoCambioMeseWheel = useRef(0);
@@ -144,7 +225,10 @@ export default function CalendarioAttivitaPage() {
 
     const [{ data: commesseData }, { data: personaleData }] =
       await Promise.all([
-        supabase.from("commesse").select("id, titolo, codice").order("titolo"),
+        supabase
+          .from("commesse")
+          .select("id, titolo, codice")
+          .order("titolo", { ascending: true }),
         supabase
           .from("personale")
           .select("*")
@@ -152,10 +236,10 @@ export default function CalendarioAttivitaPage() {
           .order("nome"),
       ]);
 
-    setCommesse(commesseData || []);
+    setCommesse(ordinaCommesseAlfabeticamente(commesseData || []));
     setPersonale(personaleData || []);
 
-    await caricaAttivita();
+    await Promise.all([caricaAttivita(), caricaAppuntamenti()]);
     setCaricamento(false);
   }
   
@@ -214,6 +298,50 @@ export default function CalendarioAttivitaPage() {
     setAttivita(normalizzate);
   }
 
+  async function caricaAppuntamenti() {
+    const { data, error } = await supabase
+      .from("appuntamenti_commesse")
+      .select(
+        `
+        id,
+        commessa_id,
+        data,
+        ora,
+        descrizione,
+        commesse (
+          titolo,
+          tipo_commessa
+        )
+      `
+      )
+      .order("data", { ascending: true })
+      .order("ora", { ascending: true });
+
+    if (error) {
+      console.error(error);
+      setAppuntamenti([]);
+      return;
+    }
+
+    const righe = (data || []) as AppuntamentoRow[];
+
+    const normalizzati = righe.map((item) => {
+      const commessa = getRelazioneSingola(item.commesse);
+
+      return {
+        id: item.id,
+        commessa_id: item.commessa_id,
+        tipo_commessa: commessa?.tipo_commessa || null,
+        titolo_commessa: commessa?.titolo || null,
+        data: item.data,
+        ora: item.ora,
+        descrizione: item.descrizione,
+      };
+    });
+
+    setAppuntamenti(normalizzati);
+  }
+
   function cambiaMese(delta: number) {
     setMeseCorrente(new Date(anno, mese + delta, 1));
   }
@@ -244,6 +372,15 @@ export default function CalendarioAttivitaPage() {
     }));
   }
 
+  function aggiornaCampoAppuntamento<
+    TCampo extends keyof typeof FORM_APPUNTAMENTO_INIZIALE
+  >(campo: TCampo, valore: (typeof FORM_APPUNTAMENTO_INIZIALE)[TCampo]) {
+    setFormAppuntamento((corrente) => ({
+      ...corrente,
+      [campo]: valore,
+    }));
+  }
+
   function togglePersona(id: string) {
     setForm((corrente) => {
       const presente = corrente.persone_ids.includes(id);
@@ -263,6 +400,12 @@ export default function CalendarioAttivitaPage() {
     setModaleAperta(true);
   }
 
+  function apriNuovoAppuntamento() {
+    setFormAppuntamento(FORM_APPUNTAMENTO_INIZIALE);
+    setAppuntamentoInModifica(null);
+    setModaleAppuntamentoAperta(true);
+  }
+
   function apriModificaAttivita(item: Attivita) {
     setAttivitaInModifica(item);
 
@@ -275,6 +418,19 @@ export default function CalendarioAttivitaPage() {
     });
 
     setModaleAperta(true);
+  }
+
+  function apriModificaAppuntamento(item: Appuntamento) {
+    setAppuntamentoInModifica(item);
+
+    setFormAppuntamento({
+      commessa_id: item.commessa_id || VALORE_APPUNTAMENTO_LIBERO,
+      data: item.data,
+      ora: item.ora.slice(0, 5),
+      descrizione: item.descrizione,
+    });
+
+    setModaleAppuntamentoAperta(true);
   }
 
   async function salvaAttivita() {
@@ -389,6 +545,88 @@ export default function CalendarioAttivitaPage() {
     await caricaAttivita();
   }
 
+  async function salvaAppuntamento() {
+    if (!formAppuntamento.commessa_id) {
+      alert("Seleziona una commessa per l'appuntamento.");
+      return;
+    }
+
+    if (!formAppuntamento.data || !formAppuntamento.ora) {
+      alert("Inserisci data e ora dell'appuntamento.");
+      return;
+    }
+
+    if (!formAppuntamento.descrizione.trim()) {
+      alert("Inserisci una descrizione per l'appuntamento.");
+      return;
+    }
+
+    const appuntamentoLibero =
+      formAppuntamento.commessa_id === VALORE_APPUNTAMENTO_LIBERO;
+
+    const payload = {
+      commessa_id: appuntamentoLibero ? null : formAppuntamento.commessa_id,
+      data: formAppuntamento.data,
+      ora: formAppuntamento.ora,
+      descrizione: formAppuntamento.descrizione.trim(),
+    };
+
+    if (appuntamentoInModifica) {
+      const { error } = await supabase
+        .from("appuntamenti_commesse")
+        .update(payload)
+        .eq("id", appuntamentoInModifica.id);
+
+      if (error) {
+        console.error(error);
+        alert(
+          `Errore durante la modifica dell'appuntamento: ${error.message}`
+        );
+        return;
+      }
+    } else {
+      const { error } = await supabase
+        .from("appuntamenti_commesse")
+        .insert(payload);
+
+      if (error) {
+        console.error(error);
+        alert(
+          `Errore durante la creazione dell'appuntamento: ${error.message}`
+        );
+        return;
+      }
+    }
+
+    setFormAppuntamento(FORM_APPUNTAMENTO_INIZIALE);
+    setAppuntamentoInModifica(null);
+    setModaleAppuntamentoAperta(false);
+    await caricaAppuntamenti();
+  }
+
+  async function eliminaAppuntamento() {
+    if (!appuntamentoInModifica) return;
+
+    const conferma = window.confirm("Eliminare questo appuntamento?");
+    if (!conferma) return;
+
+    const { error } = await supabase
+      .from("appuntamenti_commesse")
+      .delete()
+      .eq("id", appuntamentoInModifica.id);
+
+    if (error) {
+      console.error(error);
+      alert("Errore durante l'eliminazione dell'appuntamento.");
+      return;
+    }
+
+    setFormAppuntamento(FORM_APPUNTAMENTO_INIZIALE);
+    setAppuntamentoInModifica(null);
+    setModaleAppuntamentoAperta(false);
+    await caricaAppuntamenti();
+  }
+
   function isWeekend(data: Date) {
     const giorno = data.getDay();
     return giorno === 0 || giorno === 6;
@@ -460,7 +698,7 @@ export default function CalendarioAttivitaPage() {
       giorno ? getChiaveData(giorno) : null
     );
 
-    const segmenti = attivita
+    const segmentiAttivita = attivita
       .map((item) => {
         const indici = getGiorniLavorativiAttivita(item)
           .map((giorno) => chiaviSettimana.indexOf(getChiaveData(giorno)))
@@ -471,6 +709,7 @@ export default function CalendarioAttivitaPage() {
         }
 
         return {
+          tipo: "attivita" as const,
           attivita: item,
           start: Math.min(...indici),
           end: Math.max(...indici),
@@ -478,6 +717,26 @@ export default function CalendarioAttivitaPage() {
         };
       })
       .filter(Boolean) as SegmentoCalendario[];
+
+    const segmentiAppuntamenti = appuntamenti
+      .map((item) => {
+        const indice = chiaviSettimana.indexOf(item.data);
+
+        if (indice < 0) {
+          return null;
+        }
+
+        return {
+          tipo: "appuntamento" as const,
+          appuntamento: item,
+          start: indice,
+          end: indice,
+          riga: 0,
+        };
+      })
+      .filter(Boolean) as SegmentoCalendario[];
+
+    const segmenti = [...segmentiAttivita, ...segmentiAppuntamenti];
 
     const righeOccupate: boolean[][] = [];
 
@@ -521,6 +780,19 @@ export default function CalendarioAttivitaPage() {
 
     const simbolo = SIMBOLO_TIPO[item.tipo_commessa] || "";
     return `${simbolo} ${item.titolo_commessa || ""}`.trim();
+  }
+
+  function getTitoloCommessaAppuntamento(item: Appuntamento) {
+    if (!item.commessa_id) {
+      return item.descrizione;
+    }
+
+    const simbolo = item.tipo_commessa ? SIMBOLO_TIPO[item.tipo_commessa] || "" : "";
+    return `${simbolo} ${item.titolo_commessa || "Commessa"}`.trim();
+  }
+
+  function getOraAppuntamento(item: Appuntamento) {
+    return item.ora.slice(0, 5);
   }
 
   function getSfondoAttivita(item: Attivita) {
@@ -570,14 +842,25 @@ export default function CalendarioAttivitaPage() {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={apriNuovaAttivita}
-            className="bg-[#64B445] text-white w-12 h-12 rounded-md text-2xl font-light hover:bg-[#5AA03E] hover:scale-105 transition flex items-center justify-center shadow-sm cursor-pointer"
-            title="Nuova attività"
-          >
-            +
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={apriNuovoAppuntamento}
+              className="bg-[#D79D06] text-white w-12 h-12 rounded-md text-sm font-semibold hover:bg-[#B78305] hover:scale-105 transition flex items-center justify-center shadow-sm cursor-pointer"
+              title="Nuovo appuntamento"
+            >
+              APP
+            </button>
+
+            <button
+              type="button"
+              onClick={apriNuovaAttivita}
+              className="bg-[#64B445] text-white w-12 h-12 rounded-md text-2xl font-light hover:bg-[#5AA03E] hover:scale-105 transition flex items-center justify-center shadow-sm cursor-pointer"
+              title="Nuova attività"
+            >
+              +
+            </button>
+          </div>
         </div>
 
         <div
@@ -715,6 +998,48 @@ export default function CalendarioAttivitaPage() {
                           }}
                         >
                           {segmenti.map((segmento) => {
+                            if (segmento.tipo === "appuntamento") {
+                              const appuntamentoLibero =
+                                !segmento.appuntamento.commessa_id;
+                              const titoloCommessa = getTitoloCommessaAppuntamento(
+                                segmento.appuntamento
+                              );
+
+                              return (
+                                <button
+                                  type="button"
+                                  key={`${segmento.appuntamento.id}-${settimanaIndex}`}
+                                  onClick={() =>
+                                    apriModificaAppuntamento(segmento.appuntamento)
+                                  }
+                                  className="pointer-events-auto mx-1 h-[52px] overflow-hidden rounded-sm border-2 border-[#D79D06] bg-[#FFF8E7] px-2 py-1 text-left text-[11px] leading-tight text-[#2B2F5E] shadow-sm transition hover:bg-[#FFF1C2] cursor-pointer"
+                                  style={{
+                                    gridColumn: `${segmento.start + 1} / ${
+                                      segmento.end + 2
+                                    }`,
+                                    gridRow: `${segmento.riga + 1}`,
+                                  }}
+                                  title={`${getOraAppuntamento(
+                                    segmento.appuntamento
+                                  )} - ${titoloCommessa}${
+                                    appuntamentoLibero
+                                      ? ""
+                                      : ` - ${segmento.appuntamento.descrizione}`
+                                  }`}
+                                >
+                                  <span className="block truncate font-semibold text-[#D79D06]">
+                                    {getOraAppuntamento(segmento.appuntamento)} ·{" "}
+                                    {titoloCommessa}
+                                  </span>
+                                  {!appuntamentoLibero && (
+                                    <span className="block truncate">
+                                      {segmento.appuntamento.descrizione}
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            }
+
                             const partecipanti =
                               getPartecipanti(segmento.attivita) ||
                               "Senza assegnazione";
@@ -910,6 +1235,133 @@ export default function CalendarioAttivitaPage() {
                   className="bg-[#64B445] text-white px-5 py-3 rounded-md text-sm font-medium hover:bg-[#5AA03E] transition cursor-pointer"
                 >
                   {attivitaInModifica ? "Salva modifiche" : "Crea attività"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modaleAppuntamentoAperta && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6">
+          <div className="bg-white rounded-md shadow-2xl w-full max-w-3xl p-8 border-t-4 border-[#D79D06]">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-2xl font-semibold text-[#2B2F5E]">
+                  {appuntamentoInModifica
+                    ? "Modifica appuntamento"
+                    : "Nuovo appuntamento"}
+                </h3>
+
+                <p className="text-sm text-gray-500 mt-1">
+                  Programma una visita, un sopralluogo o un incontro collegato a
+                  una commessa.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setModaleAppuntamentoAperta(false);
+                  setAppuntamentoInModifica(null);
+                  setFormAppuntamento(FORM_APPUNTAMENTO_INIZIALE);
+                }}
+                className="text-2xl text-gray-400 hover:text-[#2B2F5E] cursor-pointer"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-2 text-[#2B2F5E]">
+                  Commessa
+                </label>
+
+                <select
+                  value={formAppuntamento.commessa_id}
+                  onChange={(e) =>
+                    aggiornaCampoAppuntamento("commessa_id", e.target.value)
+                  }
+                  className="w-full border border-gray-300 rounded-md px-4 py-3 bg-transparent outline-none transition focus:bg-white focus:border-[#D79D06] focus:shadow-sm cursor-pointer"
+                >
+                  <option value={VALORE_APPUNTAMENTO_LIBERO}>
+                    Attivit&agrave; libera
+                  </option>
+
+                  {commesse.map((commessa) => (
+                    <option key={commessa.id} value={commessa.id}>
+                      {getEtichettaCommessa(commessa)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <Campo
+                label="Data"
+                type="date"
+                value={formAppuntamento.data}
+                onChange={(value) => aggiornaCampoAppuntamento("data", value)}
+              />
+
+              <Campo
+                label="Ora"
+                type="time"
+                value={formAppuntamento.ora}
+                onChange={(value) => aggiornaCampoAppuntamento("ora", value)}
+              />
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-2 text-[#2B2F5E]">
+                  Descrizione
+                </label>
+
+                <textarea
+                  value={formAppuntamento.descrizione}
+                  onChange={(e) =>
+                    aggiornaCampoAppuntamento("descrizione", e.target.value)
+                  }
+                  rows={4}
+                  className="w-full border border-gray-300 rounded-md px-4 py-3 bg-transparent outline-none transition focus:bg-white focus:border-[#D79D06] focus:shadow-sm resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-between gap-3 mt-8">
+              <div>
+                {appuntamentoInModifica && (
+                  <button
+                    type="button"
+                    onClick={eliminaAppuntamento}
+                    className="text-red-500 hover:text-red-700 text-xl font-semibold transition cursor-pointer px-2"
+                    title="Elimina appuntamento"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModaleAppuntamentoAperta(false);
+                    setAppuntamentoInModifica(null);
+                    setFormAppuntamento(FORM_APPUNTAMENTO_INIZIALE);
+                  }}
+                  className="border border-gray-300 text-[#2B2F5E] px-5 py-3 rounded-md text-sm font-medium bg-transparent hover:bg-[#e8e8e8] transition cursor-pointer"
+                >
+                  Annulla
+                </button>
+
+                <button
+                  type="button"
+                  onClick={salvaAppuntamento}
+                  className="bg-[#D79D06] text-white px-5 py-3 rounded-md text-sm font-medium hover:bg-[#B78305] transition cursor-pointer"
+                >
+                  {appuntamentoInModifica
+                    ? "Salva modifiche"
+                    : "Crea appuntamento"}
                 </button>
               </div>
             </div>

@@ -25,7 +25,18 @@ type Attivita = {
   persone: Persona[];
 };
 
+type Appuntamento = {
+  id: string;
+  commessa_id: string | null;
+  tipo_commessa: string | null;
+  titolo_commessa: string | null;
+  data: string;
+  ora: string;
+  descrizione: string;
+};
+
 type BarraAttivita = {
+  tipo: "attivita";
   id: string;
   item: Attivita;
   partecipanti: string;
@@ -33,6 +44,17 @@ type BarraAttivita = {
   startIndex: number;
   endIndex: number;
 };
+
+type BarraAppuntamento = {
+  tipo: "appuntamento";
+  id: string;
+  item: Appuntamento;
+  titoloCommessa: string;
+  startIndex: number;
+  endIndex: number;
+};
+
+type BarraCalendario = BarraAttivita | BarraAppuntamento;
 
 const SIMBOLO_TIPO: Record<string, string> = {
   Pubblica: "■",
@@ -49,10 +71,12 @@ const SOGLIA_CAMBIO_GIORNI_WHEEL = 35;
 
 export default function DashboardActivityCalendar({
   attivita,
+  appuntamenti,
   offsetGiorni,
   setOffsetGiorni,
 }: {
   attivita: Attivita[];
+  appuntamenti: Appuntamento[];
   offsetGiorni: number;
   setOffsetGiorni: Dispatch<SetStateAction<number>>;
 }) {
@@ -82,6 +106,7 @@ export default function DashboardActivityCalendar({
           : "Attivita libera";
 
       return {
+        tipo: "attivita" as const,
         id: item.id,
         item,
         partecipanti: getPartecipanti(item),
@@ -90,9 +115,26 @@ export default function DashboardActivityCalendar({
         endIndex: Math.max(...indici) + 1,
       };
     })
-    .filter(Boolean) as BarraAttivita[];
+    .filter(Boolean) as BarraCalendario[];
 
-  const barre = assegnaRighe(barreGrezzE);
+  const barreAppuntamenti = appuntamenti
+    .map((item) => {
+      const indice = indiceGiorno(new Date(item.data), giorni);
+
+      if (indice < 0) return null;
+
+      return {
+        tipo: "appuntamento" as const,
+        id: item.id,
+        item,
+        titoloCommessa: getTitoloCommessaAppuntamento(item),
+        startIndex: indice,
+        endIndex: indice + 1,
+      };
+    })
+    .filter(Boolean) as BarraCalendario[];
+
+  const barre = assegnaRighe([...barreGrezzE, ...barreAppuntamenti]);
   const righe = Math.max(1, numeroRighe(barre));
 
   useEffect(() => {
@@ -198,6 +240,30 @@ export default function DashboardActivityCalendar({
               const widthPercent =
                 ((barra.endIndex - barra.startIndex) / giorni.length) * 100;
 
+              if (barra.tipo === "appuntamento") {
+                const appuntamentoLibero = !barra.item.commessa_id;
+
+                return (
+                  <div
+                    key={barra.id}
+                    className="absolute flex h-8 flex-col justify-center overflow-hidden rounded-sm border-2 border-[#D79D06] bg-[#FFF8E7] px-2 py-1 text-[11px] leading-tight text-[#2B2F5E] shadow-sm"
+                    style={{
+                      left: `${leftPercent}%`,
+                      width: `calc(${widthPercent}% - 6px)`,
+                      top: 12 + barra.riga * ALTEZZA_RIGA,
+                    }}
+                    title={`${getOraAppuntamento(barra.item)} - ${
+                      barra.titoloCommessa
+                    }${appuntamentoLibero ? "" : ` - ${barra.item.descrizione}`}`}
+                  >
+                    <span className="truncate font-semibold text-[#D79D06]">
+                      {getOraAppuntamento(barra.item)}
+                    </span>
+                    <span className="truncate">{barra.titoloCommessa}</span>
+                  </div>
+                );
+              }
+
               return (
                 <div
                   key={barra.id}
@@ -211,11 +277,6 @@ export default function DashboardActivityCalendar({
                   }}
                   title={`${barra.partecipanti} - ${barra.titoloCommessa} - ${barra.item.titolo}`}
                 >
-                  {barra.item.persone.length > 1 && (
-                    <span className="truncate font-semibold">
-                      {barra.partecipanti}
-                    </span>
-                  )}
                   <span className="truncate">{barra.titoloCommessa}</span>
                 </div>
               );
@@ -227,7 +288,7 @@ export default function DashboardActivityCalendar({
   );
 }
 
-function assegnaRighe(barre: BarraAttivita[]) {
+function assegnaRighe(barre: BarraCalendario[]) {
   const righe: { startIndex: number; endIndex: number }[][] = [];
 
   return [...barre]
@@ -324,6 +385,19 @@ function indiceGiorno(data: Date, giorni: Date[]) {
 
 function getPartecipanti(item: Attivita) {
   return item.persone.map((persona) => persona.nome).join(", ");
+}
+
+function getTitoloCommessaAppuntamento(item: Appuntamento) {
+  if (!item.commessa_id) {
+    return item.descrizione;
+  }
+
+  const simbolo = item.tipo_commessa ? SIMBOLO_TIPO[item.tipo_commessa] || "" : "";
+  return `${simbolo} ${item.titolo_commessa || "Commessa"}`.trim();
+}
+
+function getOraAppuntamento(item: Appuntamento) {
+  return item.ora.slice(0, 5);
 }
 
 function getSfondoAttivita(item: Attivita) {

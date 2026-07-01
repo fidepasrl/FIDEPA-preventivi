@@ -16,7 +16,7 @@ export default function LayoutApp({
         <div className="flex">
           <AppSidebar />
 
-          <main className="flex-1 min-h-[calc(100vh-4rem)] p-6 overflow-x-hidden">
+          <main className="flex-1 min-h-[calc(100vh-4rem)] p-6 pb-28 overflow-x-hidden">
             {children}
           </main>
         </div>

@@ -5,7 +5,9 @@ import LayoutApp from "@/components/LayoutApp";
 import { pdf } from "@react-pdf/renderer";
 import { saveAs } from "file-saver";
 import PreventivoPDF from "@/components/pdf/PreventivoPDF";
+import ImportoInput from "@/components/ImportoInput";
 import { supabase } from "@/lib/supabase";
+import { finalizzaInputImporto, parseImporto } from "@/lib/importi";
 
 type Cliente = {
   cliente: string;
@@ -30,7 +32,7 @@ type Lavorazione = {
   descrizione: string;
   categoria: string;
   macrocategoria: MacroCategoria;
-  importo: number;
+  importo: number | string;
 };
 
 const MACROCATEGORIE: MacroCategoria[] = [
@@ -87,7 +89,7 @@ export default function PreventivoStep3Page() {
         } else {
           const importiSalvati = localStorage.getItem("lavorazioniStep3Importi");
 
-          const importiModificati: { id: string; importo: number }[] =
+          const importiModificati: { id: string; importo: number | string }[] =
             importiSalvati ? JSON.parse(importiSalvati) : [];
 
           const lavorazioniOrdinate = voci
@@ -106,8 +108,8 @@ export default function PreventivoStep3Page() {
                 macrocategoria: voce.macrocategoria || "Progettazione",
                 importo:
                   importoModificato?.importo !== undefined
-                    ? Number(importoModificato.importo)
-                    : Number(voce.importo || 0),
+                    ? finalizzaInputImporto(importoModificato.importo)
+                    : finalizzaInputImporto(voce.importo || 0),
               };
             });
 
@@ -164,7 +166,7 @@ export default function PreventivoStep3Page() {
       }
 
       if (typeof dati.scontoImporto === "string") {
-        setScontoImporto(dati.scontoImporto);
+        setScontoImporto(finalizzaInputImporto(dati.scontoImporto));
       }
 
       if (dati.pagamento) {
@@ -262,7 +264,7 @@ export default function PreventivoStep3Page() {
   function aggiornaImporto(id: string, nuovoImporto: string) {
     setLavorazioni((correnti) => {
       const aggiornate = correnti.map((voce) =>
-        voce.id === id ? { ...voce, importo: Number(nuovoImporto) } : voce
+        voce.id === id ? { ...voce, importo: nuovoImporto } : voce
       );
 
       localStorage.setItem(
@@ -270,7 +272,7 @@ export default function PreventivoStep3Page() {
         JSON.stringify(
           aggiornate.map((voce) => ({
             id: voce.id,
-            importo: voce.importo,
+            importo: parseImporto(voce.importo),
           }))
         )
       );
@@ -286,8 +288,8 @@ export default function PreventivoStep3Page() {
     }));
   }
 
-  function formatEuro(valore: number) {
-    return valore.toLocaleString("it-IT", {
+  function formatEuro(valore: number | string) {
+    return parseImporto(valore).toLocaleString("it-IT", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
@@ -301,15 +303,20 @@ export default function PreventivoStep3Page() {
   }
 
   const imponibile = lavorazioni.reduce(
-    (totale, voce) => totale + voce.importo,
+    (totale, voce) => totale + parseImporto(voce.importo),
     0
   );
+
+  const lavorazioniNumeriche = lavorazioni.map((voce) => ({
+    ...voce,
+    importo: parseImporto(voce.importo),
+  }));
 
   const scontoPercentualeNumero =
     scontoPercentuale === "" ? 0 : Number(scontoPercentuale);
 
   const scontoImportoNumero =
-    scontoImporto === "" ? 0 : Number(scontoImporto);
+    scontoImporto === "" ? 0 : parseImporto(scontoImporto);
 
   const scontoDaPercentuale = imponibile * (scontoPercentualeNumero / 100);
 
@@ -344,7 +351,7 @@ export default function PreventivoStep3Page() {
     const blob = await pdf(
       <PreventivoPDF
         cliente={cliente}
-        lavorazioni={lavorazioni}
+        lavorazioni={lavorazioniNumeriche}
         imponibile={imponibile}
         cassa={cassa}
         iva={iva}
@@ -373,7 +380,7 @@ export default function PreventivoStep3Page() {
         iva,
         sconto: scontoNumero,
         totale,
-        lavorazioni,
+        lavorazioni: lavorazioniNumeriche,
         pagamento,
       },
     ]);
@@ -392,7 +399,7 @@ export default function PreventivoStep3Page() {
     const blob = await pdf(
       <PreventivoPDF
         cliente={cliente}
-        lavorazioni={lavorazioni}
+        lavorazioni={lavorazioniNumeriche}
         imponibile={imponibile}
         cassa={cassa}
         iva={iva}
@@ -551,9 +558,8 @@ export default function PreventivoStep3Page() {
                   onChange={setScontoPercentuale}
                 />
 
-                <Campo
+                <CampoImporto
                   label="Sconto €"
-                  type="number"
                   value={scontoImporto}
                   onChange={setScontoImporto}
                 />
@@ -639,13 +645,13 @@ export default function PreventivoStep3Page() {
 
                             <div className="text-right">
                               {modificaImporti ? (
-                                <input
-                                  type="number"
-                                  value={voce.importo}
-                                  onChange={(e) =>
-                                    aggiornaImporto(voce.id, e.target.value)
+                                <ImportoInput
+                                  compact
+                                  value={String(voce.importo)}
+                                  onChange={(value) =>
+                                    aggiornaImporto(voce.id, value)
                                   }
-                                  className="w-32 border border-gray-300 rounded-md px-3 py-2 bg-transparent outline-none transition focus:bg-white focus:border-[#64B445] focus:shadow-sm text-right"
+                                  className="w-40"
                                 />
                               ) : (
                                 <p className="text-[15px] text-[#2B2F5E] whitespace-nowrap">
@@ -813,6 +819,26 @@ function Campo({
         onChange={(e) => onChange(e.target.value)}
         className="w-full border border-gray-300 rounded-md px-4 py-3 bg-transparent outline-none transition focus:bg-white focus:border-[#64B445] focus:shadow-sm"
       />
+    </div>
+  );
+}
+
+function CampoImporto({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium mb-2 text-[#2B2F5E]">
+        {label}
+      </label>
+
+      <ImportoInput value={value} onChange={onChange} />
     </div>
   );
 }
