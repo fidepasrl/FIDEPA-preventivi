@@ -32,6 +32,13 @@ type ArgomentoRiunione = {
   created_at: string;
 };
 
+type AggiornamentoCommessa = {
+  id: string;
+  testo: string;
+  data_nota: string | null;
+  created_at: string;
+};
+
 const PRIORITA: Priorita[] = [
   "Urgente",
   "Alta",
@@ -56,6 +63,12 @@ export default function NuovaRiunionePage() {
   const [salvataggioOk, setSalvataggioOk] = useState(false);
 
   const [argomenti, setArgomenti] = useState<ArgomentoRiunione[]>([]);
+  const [aggiornamentiCommesse, setAggiornamentiCommesse] = useState<
+    Partial<Record<string, AggiornamentoCommessa[]>>
+  >({});
+  const [caricamentoAggiornamenti, setCaricamentoAggiornamenti] = useState<
+    string[]
+  >([]);
 
   const oggi = new Date().toISOString().slice(0, 10);
 
@@ -93,6 +106,7 @@ export default function NuovaRiunionePage() {
 
   function selezionaCommessa(commessa: Commessa) {
     setCommessaSelezionata(commessa);
+    caricaUltimiAggiornamenti(commessa.id);
 
     const giaPresente = note.some(
       (nota) => nota.tipo === "commessa" && nota.commessa_id === commessa.id
@@ -110,6 +124,37 @@ export default function NuovaRiunionePage() {
         },
       ]);
     }
+  }
+
+  async function caricaUltimiAggiornamenti(commessaId: string) {
+    setCaricamentoAggiornamenti((correnti) =>
+      correnti.includes(commessaId) ? correnti : [...correnti, commessaId]
+    );
+
+    const { data, error } = await supabase
+      .from("commesse_note")
+      .select("id, testo, data_nota, created_at")
+      .eq("commessa_id", commessaId)
+      .order("data_nota", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .limit(3);
+
+    if (error) {
+      console.error("Errore caricamento aggiornamenti commessa:", error);
+      setAggiornamentiCommesse((correnti) => ({
+        ...correnti,
+        [commessaId]: [],
+      }));
+    } else {
+      setAggiornamentiCommesse((correnti) => ({
+        ...correnti,
+        [commessaId]: data || [],
+      }));
+    }
+
+    setCaricamentoAggiornamenti((correnti) =>
+      correnti.filter((id) => id !== commessaId)
+    );
   }
 
   async function caricaArgomenti() {
@@ -403,6 +448,48 @@ export default function NuovaRiunionePage() {
                       </button>
                     </div>
 
+                    {nota.tipo === "commessa" && nota.commessa_id && (
+                      <div className="border-l-2 border-[#D79D06] bg-white/70 px-4 py-3">
+                        <p className="text-[11px] uppercase tracking-[0.12em] font-semibold text-gray-500 mb-2">
+                          Ultimi aggiornamenti
+                        </p>
+
+                        {caricamentoAggiornamenti.includes(
+                          nota.commessa_id
+                        ) ? (
+                          <p className="text-[13px] text-gray-400">
+                            Caricamento aggiornamenti...
+                          </p>
+                        ) : (aggiornamentiCommesse[nota.commessa_id] || [])
+                            .length === 0 ? (
+                          <p className="text-[13px] text-gray-400">
+                            Nessun aggiornamento precedente.
+                          </p>
+                        ) : (
+                          <div className="space-y-2">
+                            {aggiornamentiCommesse[nota.commessa_id]?.map(
+                              (aggiornamento) => (
+                                <div
+                                  key={aggiornamento.id}
+                                  className="grid grid-cols-[90px_minmax(0,1fr)] gap-3 text-[13px]"
+                                >
+                                  <span className="text-[#D79D06]">
+                                    {formattaDataAggiornamento(
+                                      aggiornamento.data_nota ||
+                                        aggiornamento.created_at
+                                    )}
+                                  </span>
+                                  <span className="text-[#2B2F5E] leading-snug">
+                                    {aggiornamento.testo}
+                                  </span>
+                                </div>
+                              )
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <input
                       type="date"
                       value={nota.data}
@@ -468,6 +555,12 @@ export default function NuovaRiunionePage() {
       )}
     </LayoutApp>
   );
+}
+
+function formattaDataAggiornamento(value: string) {
+  const data = value.includes("T") ? new Date(value) : new Date(`${value}T00:00:00`);
+
+  return data.toLocaleDateString("it-IT");
 }
 
 function Popup({

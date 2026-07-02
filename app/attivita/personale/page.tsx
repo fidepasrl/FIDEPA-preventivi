@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 type Persona = {
   id: string;
   nome: string;
+  email: string | null;
   colore: string;
   attivo: boolean;
 };
@@ -25,6 +26,21 @@ type AttivitaPersona = {
   titolo_commessa: string | null;
 };
 
+type AttivitaPersonaleRow = {
+  persona_id: string;
+  personale: RelazioneSupabase<Pick<Persona, "nome" | "colore">>;
+  attivita_commesse: RelazioneSupabase<{
+    id: string;
+    titolo: string;
+    data_inizio: string;
+    giorni: number;
+    commesse: RelazioneSupabase<{
+      titolo: string | null;
+      tipo_commessa: string | null;
+    }>;
+  }>;
+};
+
 type SegmentoAttivitaPersona = {
   start: number;
   end: number;
@@ -39,6 +55,7 @@ type AttivitaVisibilePersona = {
 
 const FORM_INIZIALE = {
   nome: "",
+  email: "",
   colore: "#5E9AD3",
 };
 
@@ -266,9 +283,10 @@ export default function PersonalePage() {
       `
     );
 
+    const righeAttivita = (attivitaData || []) as AttivitaPersonaleRow[];
     const normalizzate =
-      attivitaData
-        ?.map((item: any) => {
+      righeAttivita
+        .map((item) => {
           const persona = getRelazioneSingola(item.personale);
           const attivitaCommessa = getRelazioneSingola(item.attivita_commesse);
           const commessa = getRelazioneSingola(attivitaCommessa?.commesse);
@@ -301,8 +319,14 @@ export default function PersonalePage() {
       return;
     }
 
+    if (!emailValida(form.email)) {
+      alert("Inserisci un indirizzo email valido.");
+      return;
+    }
+
     const { error } = await supabase.from("personale").insert({
       nome: form.nome.trim(),
+      email: form.email.trim().toLowerCase(),
       colore: form.colore,
       attivo: true,
     });
@@ -331,6 +355,7 @@ export default function PersonalePage() {
             .from("personale")
             .update({
             nome: personaAggiornata.nome,
+            email: personaAggiornata.email?.trim().toLowerCase() || null,
             colore: personaAggiornata.colore,
             attivo: personaAggiornata.attivo,
             })
@@ -347,6 +372,17 @@ export default function PersonalePage() {
             item.id === persona.id ? personaAggiornata : item
             )
         );
+    }
+
+    async function aggiornaEmailPersona(persona: Persona, valore: string) {
+      const email = valore.trim().toLowerCase();
+
+      if (email && !emailValida(email)) {
+        alert("Inserisci un indirizzo email valido.");
+        return;
+      }
+
+      await aggiornaPersona(persona, "email", email);
     }
 
     async function eliminaPersona() {
@@ -485,7 +521,7 @@ export default function PersonalePage() {
                   }`}
                 >
                   <div className="px-4 py-3 border-b border-gray-200 bg-[#FAFAFA] flex justify-between items-center gap-4">
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3 min-w-0">
                       <input
                         type="color"
                         value={persona.colore}
@@ -501,6 +537,16 @@ export default function PersonalePage() {
                           aggiornaPersona(persona, "nome", e.target.value)
                         }
                         className="border-0 bg-transparent outline-none text-[18px] font-semibold text-[#2B2F5E]"
+                      />
+
+                      <input
+                        type="email"
+                        defaultValue={persona.email || ""}
+                        onBlur={(e) =>
+                          aggiornaEmailPersona(persona, e.target.value)
+                        }
+                        placeholder="Email personale"
+                        className="w-[260px] max-w-full border border-gray-300 rounded-md bg-white px-3 py-2 outline-none text-[14px] text-[#2B2F5E] focus:border-[#64B445]"
                       />
                     </div>
 
@@ -651,6 +697,15 @@ export default function PersonalePage() {
                 }
               />
 
+              <Campo
+                label="Email personale"
+                type="email"
+                value={form.email}
+                onChange={(value) =>
+                  setForm((corrente) => ({ ...corrente, email: value }))
+                }
+              />
+
               <div>
                 <label className="block text-sm font-medium mb-2 text-[#2B2F5E]">
                   Colore
@@ -744,10 +799,12 @@ function Campo({
   label,
   value,
   onChange,
+  type = "text",
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  type?: string;
 }) {
   return (
     <div>
@@ -756,10 +813,15 @@ function Campo({
       </label>
 
       <input
+        type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="w-full border border-gray-300 rounded-md px-4 py-3 bg-transparent outline-none transition focus:bg-white focus:border-[#64B445] focus:shadow-sm"
       />
     </div>
   );
+}
+
+function emailValida(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }

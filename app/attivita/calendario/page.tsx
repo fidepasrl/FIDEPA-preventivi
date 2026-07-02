@@ -13,6 +13,7 @@ type Commessa = {
 type Persona = {
   id: string;
   nome: string;
+  email: string | null;
   colore: string;
   attivo: boolean;
 };
@@ -37,7 +38,9 @@ type Appuntamento = {
   titolo_commessa: string | null;
   data: string;
   ora: string;
+  posizione: string | null;
   descrizione: string;
+  persone: Persona[];
 };
 
 type AttivitaRow = {
@@ -63,6 +66,7 @@ type AppuntamentoRow = {
   commessa_id: string | null;
   data: string;
   ora: string;
+  posizione: string | null;
   descrizione: string;
   commesse?: {
     titolo: string | null;
@@ -71,6 +75,9 @@ type AppuntamentoRow = {
     titolo: string | null;
     tipo_commessa: string | null;
   } | null;
+  appuntamenti_personale?: {
+    personale: RelazioneSupabase<Persona>;
+  }[] | null;
 };
 
 type SegmentoCalendario = {
@@ -101,7 +108,9 @@ const FORM_APPUNTAMENTO_INIZIALE = {
   commessa_id: VALORE_APPUNTAMENTO_LIBERO,
   data: new Date().toISOString().slice(0, 10),
   ora: "09:00",
+  posizione: "",
   descrizione: "",
+  persone_ids: [] as string[],
 };
 
 const COLONNE_CALENDARIO =
@@ -168,6 +177,7 @@ export default function CalendarioAttivitaPage() {
     useState(false);
   const [appuntamentoInModifica, setAppuntamentoInModifica] =
     useState<Appuntamento | null>(null);
+  const [salvataggioAppuntamento, setSalvataggioAppuntamento] = useState(false);
 
   const [caricamento, setCaricamento] = useState(true);
   const ultimoCambioMeseWheel = useRef(0);
@@ -307,10 +317,20 @@ export default function CalendarioAttivitaPage() {
         commessa_id,
         data,
         ora,
+        posizione,
         descrizione,
         commesse (
           titolo,
           tipo_commessa
+        ),
+        appuntamenti_personale (
+          personale (
+            id,
+            nome,
+            email,
+            colore,
+            attivo
+          )
         )
       `
       )
@@ -335,7 +355,12 @@ export default function CalendarioAttivitaPage() {
         titolo_commessa: commessa?.titolo || null,
         data: item.data,
         ora: item.ora,
+        posizione: item.posizione,
         descrizione: item.descrizione,
+        persone:
+          item.appuntamenti_personale
+            ?.map((rel) => getRelazioneSingola(rel.personale))
+            .filter((persona): persona is Persona => Boolean(persona)) || [],
       };
     });
 
@@ -400,6 +425,19 @@ export default function CalendarioAttivitaPage() {
     setModaleAperta(true);
   }
 
+  function togglePersonaAppuntamento(id: string) {
+    setFormAppuntamento((corrente) => {
+      const presente = corrente.persone_ids.includes(id);
+
+      return {
+        ...corrente,
+        persone_ids: presente
+          ? corrente.persone_ids.filter((item) => item !== id)
+          : [...corrente.persone_ids, id],
+      };
+    });
+  }
+
   function apriNuovoAppuntamento() {
     setFormAppuntamento(FORM_APPUNTAMENTO_INIZIALE);
     setAppuntamentoInModifica(null);
@@ -427,7 +465,9 @@ export default function CalendarioAttivitaPage() {
       commessa_id: item.commessa_id || VALORE_APPUNTAMENTO_LIBERO,
       data: item.data,
       ora: item.ora.slice(0, 5),
+      posizione: item.posizione || "",
       descrizione: item.descrizione,
+      persone_ids: item.persone.map((persona) => persona.id),
     });
 
     setModaleAppuntamentoAperta(true);
@@ -568,8 +608,15 @@ export default function CalendarioAttivitaPage() {
       commessa_id: appuntamentoLibero ? null : formAppuntamento.commessa_id,
       data: formAppuntamento.data,
       ora: formAppuntamento.ora,
+      posizione: formAppuntamento.posizione.trim() || null,
       descrizione: formAppuntamento.descrizione.trim(),
     };
+
+    setSalvataggioAppuntamento(true);
+
+    let appuntamentoId = appuntamentoInModifica?.id || "";
+    let tipoNotifica: "creato" | "modificato" | "spostato" = "creato";
+    let personeRimosseIds: string[] = [];
 
     if (appuntamentoInModifica) {
       const { error } = await supabase
@@ -582,26 +629,100 @@ export default function CalendarioAttivitaPage() {
         alert(
           `Errore durante la modifica dell'appuntamento: ${error.message}`
         );
+        setSalvataggioAppuntamento(false);
         return;
       }
-    } else {
-      const { error } = await supabase
-        .from("appuntamenti_commesse")
-        .insert(payload);
 
-      if (error) {
+      personeRimosseIds = appuntamentoInModifica.persone
+        .map((persona) => persona.id)
+        .filter((id) => !formAppuntamento.persone_ids.includes(id));
+      tipoNotifica =
+        appuntamentoInModifica.data !== payload.data ||
+        appuntamentoInModifica.ora.slice(0, 5) !== payload.ora
+          ? "spostato"
+          : "modificato";
+    } else {
+      const { data, error } = await supabase
+        .from("appuntamenti_commesse")
+        .insert(payload)
+        .select("id")
+        .single();
+
+      if (error || !data) {
         console.error(error);
         alert(
-          `Errore durante la creazione dell'appuntamento: ${error.message}`
+          `Errore durante la creazione dell'appuntamento: ${
+            error?.message || "identificativo non disponibile"
+          }`
         );
+        setSalvataggioAppuntamento(false);
         return;
       }
+
+      appuntamentoId = data.id;
     }
+
+    const errorePersonale = await salvaPersonaleAppuntamento(
+      appuntamentoId,
+      formAppuntamento.persone_ids
+    );
+
+    if (errorePersonale) {
+      alert(
+        `Appuntamento salvato, ma errore nell'assegnazione del personale: ${errorePersonale}`
+      );
+      setSalvataggioAppuntamento(false);
+      return;
+    }
+
+    const esitoNotifica = await inviaNotificaAppuntamento({
+      tipo: tipoNotifica,
+      appuntamentoId,
+      personaIds: formAppuntamento.persone_ids,
+      personaRimossiIds: personeRimosseIds,
+      commessaTitolo: appuntamentoLibero
+        ? "Attivita libera"
+        : commesse.find((commessa) => commessa.id === payload.commessa_id)
+            ?.titolo || "Commessa",
+      data: payload.data,
+      ora: payload.ora,
+      posizione: payload.posizione || "",
+      descrizione: payload.descrizione,
+    });
 
     setFormAppuntamento(FORM_APPUNTAMENTO_INIZIALE);
     setAppuntamentoInModifica(null);
     setModaleAppuntamentoAperta(false);
+    setSalvataggioAppuntamento(false);
     await caricaAppuntamenti();
+
+    if (esitoNotifica) {
+      alert(`Appuntamento salvato. ${esitoNotifica}`);
+    }
+  }
+
+  async function salvaPersonaleAppuntamento(
+    appuntamentoId: string,
+    personaIds: string[]
+  ) {
+    const { error: deleteError } = await supabase
+      .from("appuntamenti_personale")
+      .delete()
+      .eq("appuntamento_id", appuntamentoId);
+
+    if (deleteError) return deleteError.message;
+    if (personaIds.length === 0) return null;
+
+    const { error: insertError } = await supabase
+      .from("appuntamenti_personale")
+      .insert(
+        personaIds.map((personaId) => ({
+          appuntamento_id: appuntamentoId,
+          persona_id: personaId,
+        }))
+      );
+
+    return insertError?.message || null;
   }
 
   async function eliminaAppuntamento() {
@@ -610,6 +731,12 @@ export default function CalendarioAttivitaPage() {
     const conferma = window.confirm("Eliminare questo appuntamento?");
     if (!conferma) return;
 
+    setSalvataggioAppuntamento(true);
+
+    const personeIds = appuntamentoInModifica.persone.map(
+      (persona) => persona.id
+    );
+    const appuntamentoEliminato = appuntamentoInModifica;
     const { error } = await supabase
       .from("appuntamenti_commesse")
       .delete()
@@ -618,13 +745,89 @@ export default function CalendarioAttivitaPage() {
     if (error) {
       console.error(error);
       alert("Errore durante l'eliminazione dell'appuntamento.");
+      setSalvataggioAppuntamento(false);
       return;
     }
+
+    const esitoNotifica = await inviaNotificaAppuntamento({
+      tipo: "eliminato",
+      appuntamentoId: appuntamentoEliminato.id,
+      personaIds: personeIds,
+      personaRimossiIds: [],
+      commessaTitolo:
+        appuntamentoEliminato.titolo_commessa || "Attivita libera",
+      data: appuntamentoEliminato.data,
+      ora: appuntamentoEliminato.ora.slice(0, 5),
+      posizione: appuntamentoEliminato.posizione || "",
+      descrizione: appuntamentoEliminato.descrizione,
+    });
 
     setFormAppuntamento(FORM_APPUNTAMENTO_INIZIALE);
     setAppuntamentoInModifica(null);
     setModaleAppuntamentoAperta(false);
+    setSalvataggioAppuntamento(false);
     await caricaAppuntamenti();
+
+    if (esitoNotifica) {
+      alert(`Appuntamento eliminato. ${esitoNotifica}`);
+    }
+  }
+
+  async function inviaNotificaAppuntamento(payload: {
+    tipo: "creato" | "modificato" | "spostato" | "eliminato";
+    appuntamentoId: string;
+    personaIds: string[];
+    personaRimossiIds: string[];
+    commessaTitolo: string;
+    data: string;
+    ora: string;
+    posizione: string;
+    descrizione: string;
+  }) {
+    const destinatari = new Set([
+      ...payload.personaIds,
+      ...payload.personaRimossiIds,
+    ]);
+    if (destinatari.size === 0) return null;
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) return "Notifiche email non inviate: sessione non valida.";
+
+    try {
+      const response = await fetch("/api/appuntamenti/notifica", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          ...payload,
+          requestId: crypto.randomUUID(),
+        }),
+      });
+      const risultato = (await response.json()) as {
+        error?: string;
+        senzaEmail?: number;
+      };
+
+      if (!response.ok) {
+        return `Notifiche email non inviate: ${
+          risultato.error || "servizio non disponibile"
+        }`;
+      }
+
+      if (risultato.senzaEmail) {
+        return `${risultato.senzaEmail} persone non hanno un indirizzo email configurato.`;
+      }
+
+      return null;
+    } catch (error) {
+      console.error("Errore invio notifiche appuntamento:", error);
+      return "Notifiche email non inviate: servizio non raggiungibile.";
+    }
   }
 
   function isWeekend(data: Date) {
@@ -1313,6 +1516,21 @@ export default function CalendarioAttivitaPage() {
 
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium mb-2 text-[#2B2F5E]">
+                  Posizione
+                </label>
+
+                <input
+                  value={formAppuntamento.posizione}
+                  onChange={(e) =>
+                    aggiornaCampoAppuntamento("posizione", e.target.value)
+                  }
+                  placeholder="Indirizzo, sede o collegamento online"
+                  className="w-full border border-gray-300 rounded-md px-4 py-3 bg-transparent outline-none transition focus:bg-white focus:border-[#D79D06] focus:shadow-sm"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-2 text-[#2B2F5E]">
                   Descrizione
                 </label>
 
@@ -1324,6 +1542,52 @@ export default function CalendarioAttivitaPage() {
                   rows={4}
                   className="w-full border border-gray-300 rounded-md px-4 py-3 bg-transparent outline-none transition focus:bg-white focus:border-[#D79D06] focus:shadow-sm resize-none"
                 />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-2 text-[#2B2F5E]">
+                  Personale da avvisare
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {personale.map((persona) => {
+                    const selezionata =
+                      formAppuntamento.persone_ids.includes(persona.id);
+
+                    return (
+                      <label
+                        key={persona.id}
+                        className={`flex items-center gap-3 border px-3 py-2 rounded-sm cursor-pointer transition ${
+                          selezionata
+                            ? "border-[#D79D06] bg-[#FFF9E8]"
+                            : "border-gray-200 bg-white hover:bg-[#FAFAFA]"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selezionata}
+                          onChange={() =>
+                            togglePersonaAppuntamento(persona.id)
+                          }
+                          className="accent-[#D79D06]"
+                        />
+
+                        <span className="min-w-0">
+                          <span className="block text-[14px] font-medium text-[#2B2F5E]">
+                            {persona.nome}
+                          </span>
+                          <span
+                            className={`block text-[12px] truncate ${
+                              persona.email ? "text-gray-500" : "text-red-500"
+                            }`}
+                          >
+                            {persona.email || "Email non configurata"}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -1357,11 +1621,14 @@ export default function CalendarioAttivitaPage() {
                 <button
                   type="button"
                   onClick={salvaAppuntamento}
-                  className="bg-[#D79D06] text-white px-5 py-3 rounded-md text-sm font-medium hover:bg-[#B78305] transition cursor-pointer"
+                  disabled={salvataggioAppuntamento}
+                  className="bg-[#D79D06] text-white px-5 py-3 rounded-md text-sm font-medium hover:bg-[#B78305] transition cursor-pointer disabled:bg-gray-300 disabled:cursor-wait"
                 >
-                  {appuntamentoInModifica
-                    ? "Salva modifiche"
-                    : "Crea appuntamento"}
+                  {salvataggioAppuntamento
+                    ? "Salvataggio..."
+                    : appuntamentoInModifica
+                      ? "Salva modifiche"
+                      : "Crea appuntamento"}
                 </button>
               </div>
             </div>

@@ -3,12 +3,16 @@ create table if not exists public.appuntamenti_commesse (
   commessa_id uuid references public.commesse(id) on delete cascade,
   data date not null,
   ora time not null,
+  posizione text,
   descrizione text not null,
   created_at timestamptz not null default now()
 );
 
 alter table public.appuntamenti_commesse
   alter column commessa_id drop not null;
+
+alter table public.appuntamenti_commesse
+  add column if not exists posizione text;
 
 create index if not exists appuntamenti_commesse_data_ora_idx
   on public.appuntamenti_commesse (data, ora);
