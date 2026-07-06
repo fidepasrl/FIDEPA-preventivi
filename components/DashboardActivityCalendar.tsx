@@ -65,7 +65,7 @@ const SIMBOLO_TIPO: Record<string, string> = {
 
 const NUMERO_GIORNI = 11;
 const INDICE_GIORNO_CORRENTE = Math.floor(NUMERO_GIORNI / 2);
-const ALTEZZA_RIGA = 36;
+const ALTEZZA_RIGA = 42;
 const INTERVALLO_CAMBIO_GIORNI_WHEEL = 450;
 const SOGLIA_CAMBIO_GIORNI_WHEEL = 35;
 
@@ -173,16 +173,16 @@ export default function DashboardActivityCalendar({
   return (
     <div
       ref={contenitoreCalendarioRef}
-      className="w-full overflow-hidden overscroll-contain"
+      className="w-full overflow-hidden overscroll-contain rounded-xl border border-gray-100 bg-white"
     >
       <div
         className="relative w-full"
         style={{
-          minHeight: `${70 + righe * ALTEZZA_RIGA}px`,
+          minHeight: `${82 + righe * ALTEZZA_RIGA}px`,
         }}
       >
         <div
-          className="grid border-t border-l border-gray-200"
+          className="grid border-l border-gray-100"
           style={{
             gridTemplateColumns: `repeat(${giorni.length}, minmax(0, 1fr))`,
           }}
@@ -190,8 +190,10 @@ export default function DashboardActivityCalendar({
           {giorni.map((giorno) => (
             <div
               key={giorno.toISOString()}
-              className={`border-r border-b border-gray-200 bg-[#FAFAFA] px-2 py-2 text-center text-[11px] font-medium uppercase ${
-                isOggi(giorno) ? "text-[#D79D06]" : "text-gray-500"
+              className={`border-r border-b border-gray-100 px-2 py-3 text-center text-[10px] font-semibold uppercase ${
+                isOggi(giorno)
+                  ? "bg-[#FFF8E7] text-[#D79D06]"
+                  : "bg-[#FAFAFA] text-gray-500"
               }`}
             >
               {giorno.toLocaleDateString("it-IT", {
@@ -206,17 +208,17 @@ export default function DashboardActivityCalendar({
         <div
           className="absolute left-0 right-0"
           style={{
-            top: 35,
+            top: 41,
             bottom: 0,
             backgroundImage:
-              "linear-gradient(to right, #E5E7EB 1px, transparent 1px)",
+              "linear-gradient(to right, #EEF0F3 1px, transparent 1px)",
             backgroundSize: `${100 / giorni.length}% 100%`,
           }}
         />
 
         {indiceOggi >= 0 && (
           <div
-            className="pointer-events-none absolute top-0 bottom-0 z-20 border-2 border-[#D79D06]"
+            className="pointer-events-none absolute top-0 bottom-0 z-20 border-2 border-[#D79D06] bg-[#FFF8E7]/20"
             style={{
               left: `${(indiceOggi / giorni.length) * 100}%`,
               width: `${100 / giorni.length}%`,
@@ -246,11 +248,11 @@ export default function DashboardActivityCalendar({
                 return (
                   <div
                     key={barra.id}
-                    className="absolute flex h-8 flex-col justify-center overflow-hidden rounded-sm border-2 border-[#D79D06] bg-[#FFF8E7] px-2 py-1 text-[11px] leading-tight text-[#2B2F5E] shadow-sm"
+                    className="absolute flex h-9 flex-col justify-center overflow-hidden rounded-lg border-2 border-[#D79D06] bg-[#FFF8E7] px-2.5 py-1 text-[11px] leading-tight text-[#2B2F5E] shadow-[0_4px_12px_rgba(43,47,94,0.10)]"
                     style={{
                       left: `${leftPercent}%`,
                       width: `calc(${widthPercent}% - 6px)`,
-                      top: 12 + barra.riga * ALTEZZA_RIGA,
+                      top: 14 + barra.riga * ALTEZZA_RIGA,
                     }}
                     title={`${getOraAppuntamento(barra.item)} - ${
                       barra.titoloCommessa
@@ -267,11 +269,11 @@ export default function DashboardActivityCalendar({
               return (
                 <div
                   key={barra.id}
-                  className="absolute flex h-8 flex-col justify-center overflow-hidden rounded-sm px-2 py-1 text-[11px] leading-tight text-white shadow-sm"
+                  className="absolute flex h-9 flex-col justify-center overflow-hidden rounded-lg border border-white/30 px-2.5 py-1 text-[11px] font-medium leading-tight text-white shadow-[0_4px_12px_rgba(43,47,94,0.14)]"
                   style={{
                     left: `${leftPercent}%`,
                     width: `calc(${widthPercent}% - 6px)`,
-                    top: 12 + barra.riga * ALTEZZA_RIGA,
+                    top: 14 + barra.riga * ALTEZZA_RIGA,
                     background: getSfondoAttivita(barra.item),
                     textShadow: "0 1px 1px rgba(0, 0, 0, 0.35)",
                   }}

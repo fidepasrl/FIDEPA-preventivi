@@ -22,6 +22,7 @@ drop policy if exists "appuntamenti_personale_select"
 create policy "appuntamenti_personale_select"
   on public.appuntamenti_personale
   for select
+  to authenticated
   using (true);
 
 drop policy if exists "appuntamenti_personale_insert"
@@ -29,6 +30,7 @@ drop policy if exists "appuntamenti_personale_insert"
 create policy "appuntamenti_personale_insert"
   on public.appuntamenti_personale
   for insert
+  to authenticated
   with check (true);
 
 drop policy if exists "appuntamenti_personale_update"
@@ -36,6 +38,7 @@ drop policy if exists "appuntamenti_personale_update"
 create policy "appuntamenti_personale_update"
   on public.appuntamenti_personale
   for update
+  to authenticated
   using (true)
   with check (true);
 
@@ -44,4 +47,5 @@ drop policy if exists "appuntamenti_personale_delete"
 create policy "appuntamenti_personale_delete"
   on public.appuntamenti_personale
   for delete
+  to authenticated
   using (true);

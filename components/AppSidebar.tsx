@@ -2,39 +2,34 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import AppIcon, { type AppIconName } from "@/components/AppIcon";
 import { supabase } from "@/lib/supabase";
 
-type Consiglio = {
-  id: string;
-  testo: string;
-};
-
-export default function AppSidebar() {
+export default function AppSidebar({
+  mobileOpen,
+  onClose,
+}: {
+  mobileOpen: boolean;
+  onClose: () => void;
+}) {
   const pathname = usePathname();
-
   const [riunioniOpen, setRiunioniOpen] = useState(
     pathname.startsWith("/riunioni")
   );
-
   const [preventiviOpen, setPreventiviOpen] = useState(
     pathname.startsWith("/preventivo")
   );
-
   const [rubricaOpen, setRubricaOpen] = useState(
     pathname.startsWith("/rubrica")
   );
-
   const [requisitiOpen, setRequisitiOpen] = useState(
     pathname.startsWith("/requisiti")
   );
-
-  const [confermaUscita, setConfermaUscita] = useState<string | null>(null);
-
-  const [consiglio, setConsiglio] = useState<string>("");
-
   const [attivitaOpen, setAttivitaOpen] = useState(
     pathname.startsWith("/attivita")
   );
+  const [confermaUscita, setConfermaUscita] = useState<string | null>(null);
+  const [consiglio, setConsiglio] = useState("");
 
   const isPreventivoInCompilazione =
     pathname.startsWith("/preventivo/nuovo") ||
@@ -48,6 +43,7 @@ export default function AppSidebar() {
       return;
     }
 
+    onClose();
     window.location.href = href;
   }
 
@@ -61,10 +57,6 @@ export default function AppSidebar() {
     }
   }
 
-  useEffect(() => {
-  caricaConsiglioCasuale();
-}, []);
-
   async function caricaConsiglioCasuale() {
     const { data, error } = await supabase
       .from("consigli")
@@ -77,353 +69,202 @@ export default function AppSidebar() {
     setConsiglio(casuale.testo);
   }
 
+  useEffect(() => {
+    // Il consiglio viene caricato dal database dopo il primo rendering.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    caricaConsiglioCasuale();
+  }, []);
+
   return (
-    <aside className="w-72 min-h-[calc(100vh-4rem)] bg-[#F2F2F2] flex flex-col justify-between">
-      <nav className="p-4 space-y-2">
+    <>
+      {mobileOpen && (
         <button
           type="button"
-          onClick={() => gestisciNavigazione("/")}
-          className={pathname === "/" ? "menu-item-active" : "menu-item"}
-        >
-          <span>⌂</span>
-          Dashboard
-        </button>
+          aria-label="Chiudi menu"
+          onClick={onClose}
+          className="fixed inset-0 top-[72px] z-[800] bg-[#2B2F5E]/25 backdrop-blur-[2px] lg:hidden"
+        />
+      )}
 
-        <button
-          type="button"
-          onClick={() => gestisciNavigazione("/commesse")}
-          className={pathname.startsWith("/commesse") ? "menu-item-active" : "menu-item"}
-        >
-          <span>▦</span>
-          Commesse
-        </button>
+      <aside
+        className={`fixed lg:sticky top-[72px] left-0 z-[900] h-[calc(100vh-72px)] w-[276px] shrink-0 border-r border-[#2B2F5E]/8 bg-[#F2F2F2] flex flex-col justify-between overflow-y-auto transform transition-transform duration-200 lg:translate-x-0 ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <nav className="p-4 lg:p-5 space-y-1.5">
+          <SidebarItem
+            icon="home"
+            label="Dashboard"
+            active={pathname === "/"}
+            onClick={() => gestisciNavigazione("/")}
+          />
 
-        <button
-          type="button"
-          onClick={() => setAttivitaOpen((prev) => !prev)}
-          className="menu-item-button"
-        >
-          <span className="flex items-center gap-3">
-            <span>▥</span>
-            Attività
-          </span>
+          <SidebarItem
+            icon="building"
+            label="Commesse"
+            active={pathname.startsWith("/commesse")}
+            onClick={() => gestisciNavigazione("/commesse")}
+          />
 
-          <span className={`transition-transform ${attivitaOpen ? "rotate-180" : ""}`}>
-            ⌃
-          </span>
-        </button>
-
-        {attivitaOpen && (
-          <div className="submenu">
-            <button
-              type="button"
-              onClick={() => gestisciNavigazione("/attivita/calendario")}
-              className={
-                pathname === "/attivita/calendario"
-                  ? "submenu-item-active"
-                  : "submenu-item"
-              }
-            >
-              Calendario
-            </button>
-
-            <button
-              type="button"
-              onClick={() => gestisciNavigazione("/attivita/personale")}
-              className={
-                pathname === "/attivita/personale"
-                  ? "submenu-item-active"
-                  : "submenu-item"
-              }
-            >
-              Personale
-            </button>
-          </div>
-        )}
-
-        <button
-          type="button"
-          onClick={() => setRiunioniOpen((prev) => !prev)}
-          className="menu-item-button"
-        >
-          <span className="flex items-center gap-3">
-            <span>◷</span>
-            Riunioni
-          </span>
-
-          <span className={`transition-transform ${riunioniOpen ? "rotate-180" : ""}`}>
-            ⌃
-          </span>
-        </button>
-
-        {riunioniOpen && (
-          <div className="submenu">
-            <button
-              type="button"
-              onClick={() => gestisciNavigazione("/riunioni/nuova")}
-              className={
-                pathname === "/riunioni/nuova"
-                  ? "submenu-item-active"
-                  : "submenu-item"
-              }
-            >
-              Nuova
-            </button>
-
-            <button
-              type="button"
-              onClick={() => gestisciNavigazione("/riunioni/archivio")}
-              className={
-                pathname === "/riunioni/archivio"
-                  ? "submenu-item-active"
-                  : "submenu-item"
-              }
-            >
-              Archivio
-            </button>
-          </div>
-        )}
-
-        <button
-          type="button"
-          onClick={() => setPreventiviOpen((prev) => !prev)}
-          className="menu-item-button"
-        >
-          <span className="flex items-center gap-3">
-            <span>▤</span>
-            Preventivi
-          </span>
-
-          <span
-            className={`transition-transform ${
-              preventiviOpen ? "rotate-180" : ""
-            }`}
+          <SidebarGroup
+            icon="calendar"
+            label="Attività"
+            open={attivitaOpen}
+            onClick={() => setAttivitaOpen((corrente) => !corrente)}
           >
-            ⌃
-          </span>
-        </button>
+            <SidebarSubItem
+              label="Calendario"
+              active={pathname === "/attivita/calendario"}
+              onClick={() => gestisciNavigazione("/attivita/calendario")}
+            />
+            <SidebarSubItem
+              label="Personale"
+              active={pathname === "/attivita/personale"}
+              onClick={() => gestisciNavigazione("/attivita/personale")}
+            />
+          </SidebarGroup>
 
-        {preventiviOpen && (
-          <div className="submenu">
-            <button
-              type="button"
-              onClick={() => gestisciNavigazione("/preventivo/nuovo/step1")}
-              className={
+          <SidebarGroup
+            icon="message"
+            label="Riunioni"
+            open={riunioniOpen}
+            onClick={() => setRiunioniOpen((corrente) => !corrente)}
+          >
+            <SidebarSubItem
+              label="Nuova"
+              active={pathname === "/riunioni/nuova"}
+              onClick={() => gestisciNavigazione("/riunioni/nuova")}
+            />
+            <SidebarSubItem
+              label="Archivio"
+              active={pathname === "/riunioni/archivio"}
+              onClick={() => gestisciNavigazione("/riunioni/archivio")}
+            />
+          </SidebarGroup>
+
+          <SidebarGroup
+            icon="fileText"
+            label="Preventivi"
+            open={preventiviOpen}
+            onClick={() => setPreventiviOpen((corrente) => !corrente)}
+          >
+            <SidebarSubItem
+              label="Nuovo"
+              active={
                 pathname.startsWith("/preventivo/nuovo") ||
                 pathname === "/preventivo/step1" ||
                 pathname === "/preventivo/step2" ||
                 pathname === "/preventivo/step3"
-                  ? "submenu-item-active"
-                  : "submenu-item"
               }
-            >
-              Nuovo
-            </button>
-
-            <button
-              type="button"
+              onClick={() => gestisciNavigazione("/preventivo/nuovo/step1")}
+            />
+            <SidebarSubItem
+              label="Lavorazioni"
+              active={pathname === "/preventivo/lavorazioni"}
               onClick={() => gestisciNavigazione("/preventivo/lavorazioni")}
-              className={
-                pathname === "/preventivo/lavorazioni"
-                  ? "submenu-item-active"
-                  : "submenu-item"
-              }
-            >
-              Lavorazioni
-            </button>
-
-            <button
-              type="button"
+            />
+            <SidebarSubItem
+              label="Archivio"
+              active={pathname === "/preventivo/archivio"}
               onClick={() => gestisciNavigazione("/preventivo/archivio")}
-              className={
-                pathname === "/preventivo/archivio"
-                  ? "submenu-item-active"
-                  : "submenu-item"
-              }
-            >
-              Archivio
-            </button>
-          </div>
-        )}
+            />
+          </SidebarGroup>
 
-        <button
-          type="button"
-          onClick={() => setRequisitiOpen((prev) => !prev)}
-          className="menu-item-button"
-        >
-          <span className="flex items-center gap-3">
-            <span>&#9873;</span>
-            Gare d&apos;appalto
-          </span>
-
-          <span
-            className={`transition-transform ${
-              requisitiOpen ? "rotate-180" : ""
-            }`}
+          <SidebarGroup
+            icon="flag"
+            label="Gare d'appalto"
+            open={requisitiOpen}
+            onClick={() => setRequisitiOpen((corrente) => !corrente)}
           >
-            ^
-          </span>
-          <span className="hidden">
-          <span>â—Ž</span>
-          Gare d&apos;appalto
-          </span>
-        </button>
-
-        {requisitiOpen && (
-          <div className="submenu">
-            <button
-              type="button"
+            <SidebarSubItem
+              label="Lista commesse"
+              active={pathname === "/requisiti/commesse"}
               onClick={() => gestisciNavigazione("/requisiti/commesse")}
-              className={
-                pathname === "/requisiti/commesse"
-                  ? "submenu-item-active"
-                  : "submenu-item"
-              }
-            >
-              Lista commesse
-            </button>
-
-            <button
-              type="button"
+            />
+            <SidebarSubItem
+              label="Categorie"
+              active={pathname === "/requisiti/categorie"}
               onClick={() => gestisciNavigazione("/requisiti/categorie")}
-              className={
-                pathname === "/requisiti/categorie"
-                  ? "submenu-item-active"
-                  : "submenu-item"
-              }
-            >
-              Categorie
-            </button>
-
-            <button
-              type="button"
+            />
+            <SidebarSubItem
+              label="Verifica gara"
+              active={pathname === "/requisiti/verifica"}
               onClick={() => gestisciNavigazione("/requisiti/verifica")}
-              className={
-                pathname === "/requisiti/verifica"
-                  ? "submenu-item-active"
-                  : "submenu-item"
-              }
-            >
-              Verifica gara
-            </button>
-
-            <button
-              type="button"
+            />
+            <SidebarSubItem
+              label="Preparazione"
+              active={pathname === "/requisiti/preparazione"}
               onClick={() => gestisciNavigazione("/requisiti/preparazione")}
-              className={
-                pathname === "/requisiti/preparazione"
-                  ? "submenu-item-active"
-                  : "submenu-item"
-              }
-            >
-              Preparazione
-            </button>
-
-            <button
-              type="button"
+            />
+            <SidebarSubItem
+              label="Archivio gare"
+              active={pathname === "/requisiti/archivio"}
               onClick={() => gestisciNavigazione("/requisiti/archivio")}
-              className={
-                pathname === "/requisiti/archivio"
-                  ? "submenu-item-active"
-                  : "submenu-item"
-              }
-            >
-              Archivio gare
-            </button>
-          </div>
-        )}
+            />
+          </SidebarGroup>
 
-        <div className="hidden">
-          <span>◎</span>
-          Requisiti di gara
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setRubricaOpen((prev) => !prev)}
-          className="menu-item-button"
-        >
-          <span className="flex items-center gap-3">
-            <span>◫</span>
-            Rubrica
-          </span>
-
-          <span
-            className={`transition-transform ${
-              rubricaOpen ? "rotate-180" : ""
-            }`}
+          <SidebarGroup
+            icon="addressBook"
+            label="Rubrica"
+            open={rubricaOpen}
+            onClick={() => setRubricaOpen((corrente) => !corrente)}
           >
-            ⌃
-          </span>
-        </button>
-
-        {rubricaOpen && (
-          <div className="submenu">
-            <button
-              type="button"
+            <SidebarSubItem
+              label="Clienti"
+              active={pathname === "/rubrica/clienti"}
               onClick={() => gestisciNavigazione("/rubrica/clienti")}
-              className={
-                pathname === "/rubrica/clienti"
-                  ? "submenu-item-active"
-                  : "submenu-item"
-              }
-            >
-              Clienti
-            </button>
-
-            <button
-              type="button"
+            />
+            <SidebarSubItem
+              label="Professionisti"
+              active={pathname === "/rubrica/professionisti"}
               onClick={() => gestisciNavigazione("/rubrica/professionisti")}
-              className={
-                pathname === "/rubrica/professionisti"
-                  ? "submenu-item-active"
-                  : "submenu-item"
-              }
-            >
-              Professionisti
-            </button>
+            />
+          </SidebarGroup>
+        </nav>
+
+        <div className="p-4 lg:p-5 pt-8 space-y-4">
+          {consiglio && (
+            <div className="relative overflow-hidden rounded-2xl border border-white bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+              <div className="absolute inset-y-0 left-0 w-1 bg-[#D79D06]" />
+              <div className="flex items-center gap-2 text-[#D79D06]">
+                <span className="h-8 w-8 rounded-xl bg-[#D79D06]/10 flex items-center justify-center">
+                  <AppIcon name="lightbulb" size={17} />
+                </span>
+                <p className="text-[11px] uppercase tracking-[0.12em] font-bold">
+                  Consiglio
+                </p>
+              </div>
+              <p className="mt-3 text-[13px] text-[#2B2F5E] leading-relaxed">
+                {consiglio}
+              </p>
+            </div>
+          )}
+
+          <div className="px-1 text-[11px] text-[#2B2F5E]/55">
+            Versione 2.2.2 - Creato da Antonio Carbone
           </div>
-        )}
-      </nav>
-
-      <div className="p-4 space-y-4">
-        {consiglio && (
-          <div className="bg-white border border-gray-200 shadow-sm rounded-sm p-4">
-            <p className="text-[12px] uppercase tracking-[0.12em] text-gray-400 font-medium mb-2">
-              Consiglio:
-            </p>
-
-            <p className="text-[13px] text-[#2B2F5E] leading-snug">
-              {consiglio}
-            </p>
-          </div>
-        )}
-
-        <div className="text-xs text-[#2B2F5E]/60">
-          Versione 2.2.1 - Creato da Antonio Carbone
         </div>
-      </div>
+      </aside>
 
       {confermaUscita && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6">
-          <div className="bg-white rounded-md shadow-2xl w-full max-w-xl p-8">
-            <div className="flex justify-between items-start mb-6">
+        <div className="fixed inset-0 bg-[#2B2F5E]/45 backdrop-blur-sm z-[1200] flex items-center justify-center p-6">
+          <div className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(43,47,94,0.22)] w-full max-w-xl p-7">
+            <div className="flex justify-between items-start gap-5 mb-6">
               <div>
                 <h3 className="text-2xl font-semibold text-[#2B2F5E]">
                   Annullare la compilazione del preventivo?
                 </h3>
-
                 <p className="text-sm text-gray-500 mt-2">
                   Uscendo da questa sezione i dati inseriti verranno cancellati.
                 </p>
               </div>
-
               <button
                 type="button"
                 onClick={() => setConfermaUscita(null)}
-                className="text-2xl text-gray-400 hover:text-[#2B2F5E] cursor-pointer"
+                className="h-9 w-9 rounded-xl flex items-center justify-center text-gray-400 hover:bg-[#F2F2F2] hover:text-[#2B2F5E] transition cursor-pointer"
+                aria-label="Chiudi"
               >
-                ×
+                <AppIcon name="x" size={19} />
               </button>
             </div>
 
@@ -431,15 +272,14 @@ export default function AppSidebar() {
               <button
                 type="button"
                 onClick={() => setConfermaUscita(null)}
-                className="border border-gray-300 text-[#2B2F5E] px-5 py-3 rounded-md text-sm font-medium bg-transparent hover:bg-[#e8e8e8] transition cursor-pointer"
+                className="border border-gray-200 text-[#2B2F5E] px-5 py-3 rounded-xl text-sm font-medium bg-white hover:bg-[#F2F2F2] transition cursor-pointer"
               >
                 Annulla
               </button>
-
               <button
                 type="button"
                 onClick={confermaNavigazione}
-                className="bg-red-600 text-white px-5 py-3 rounded-md text-sm font-medium hover:bg-red-700 transition cursor-pointer"
+                className="bg-red-600 text-white px-5 py-3 rounded-xl text-sm font-medium hover:bg-red-700 transition cursor-pointer"
               >
                 Conferma
               </button>
@@ -447,6 +287,84 @@ export default function AppSidebar() {
           </div>
         </div>
       )}
-    </aside>
+    </>
+  );
+}
+
+function SidebarItem({
+  icon,
+  label,
+  active,
+  onClick,
+}: {
+  icon: AppIconName;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={active ? "menu-item-active" : "menu-item"}
+    >
+      <span className="menu-icon">
+        <AppIcon name={icon} size={18} />
+      </span>
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function SidebarGroup({
+  icon,
+  label,
+  open,
+  onClick,
+  children,
+}: {
+  icon: AppIconName;
+  label: string;
+  open: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <button type="button" onClick={onClick} className="menu-item-button">
+        <span className="flex items-center gap-3">
+          <span className="menu-icon">
+            <AppIcon name={icon} size={18} />
+          </span>
+          <span>{label}</span>
+        </span>
+        <AppIcon
+          name="chevronDown"
+          size={16}
+          className={`transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && <div className="submenu">{children}</div>}
+    </div>
+  );
+}
+
+function SidebarSubItem({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={active ? "submenu-item-active" : "submenu-item"}
+    >
+      {label}
+    </button>
   );
 }

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
+import AppIcon from "@/components/AppIcon";
 
 type CommessaMappa = {
   id: string;
@@ -108,12 +109,55 @@ export default function DashboardMap({
 }: {
   commesse: CommessaMappa[];
 }) {
+  const contenitoreRef = useRef<HTMLDivElement | null>(null);
+  const [schermoIntero, setSchermoIntero] = useState(false);
   const commesseValide = commesse.filter(
     (item) => item.latitudine !== null && item.longitudine !== null
   );
 
+  useEffect(() => {
+    function aggiornaStatoFullscreen() {
+      setSchermoIntero(document.fullscreenElement === contenitoreRef.current);
+    }
+
+    document.addEventListener("fullscreenchange", aggiornaStatoFullscreen);
+    return () =>
+      document.removeEventListener("fullscreenchange", aggiornaStatoFullscreen);
+  }, []);
+
+  async function toggleSchermoIntero() {
+    if (!contenitoreRef.current) return;
+
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+    } else {
+      await contenitoreRef.current.requestFullscreen();
+    }
+  }
+
   return (
-    <div className="relative w-full h-[570px] overflow-hidden rounded-sm border border-gray-200">
+    <div
+      ref={contenitoreRef}
+      className={
+        "relative w-full overflow-hidden border border-gray-100 bg-white " +
+        (schermoIntero
+          ? "h-screen rounded-none"
+          : "h-[440px] sm:h-[520px] rounded-xl")
+      }
+    >
+      <button
+        type="button"
+        onClick={toggleSchermoIntero}
+        className="absolute right-3 top-3 z-[500] h-10 w-10 rounded-xl border border-gray-200 bg-white/95 text-[#2B2F5E] shadow-md backdrop-blur-sm flex items-center justify-center hover:border-[#5E9AD3] hover:text-[#2D80B3] cursor-pointer"
+        aria-label={schermoIntero ? "Riduci mappa" : "Espandi mappa"}
+        title={schermoIntero ? "Riduci" : "Espandi"}
+      >
+        <AppIcon
+          name={schermoIntero ? "minimize" : "maximize"}
+          size={18}
+        />
+      </button>
+
       <MapContainer
         center={CENTRO_AGRO}
         zoom={11}
@@ -152,7 +196,7 @@ export default function DashboardMap({
         ))}
       </MapContainer>
 
-      <div className="pointer-events-none absolute bottom-3 left-3 z-[500] rounded-sm border border-gray-200 bg-white/95 px-3 py-2 shadow-sm">
+      <div className="pointer-events-none absolute bottom-3 left-3 z-[500] rounded-xl border border-gray-100 bg-white/95 px-3 py-2.5 shadow-md backdrop-blur-sm">
         <p className="mb-1 text-[12px] font-semibold text-[#2B2F5E]">
           Priorita
         </p>

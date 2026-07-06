@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import LayoutApp from "@/components/LayoutApp";
 import { supabase } from "@/lib/supabase";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import AppIcon, { type AppIconName } from "@/components/AppIcon";
 import DashboardActivityCalendar from "@/components/DashboardActivityCalendar";
 
 type TipoCommessa = "Pubblica" | "Privata" | "Gara" | "Concorso";
@@ -23,6 +24,13 @@ type Aggiornamento = {
   } | null;
 };
 
+type AggiornamentoRow = Omit<Aggiornamento, "commesse"> & {
+  commesse:
+    | Aggiornamento["commesse"]
+    | NonNullable<Aggiornamento["commesse"]>[]
+    | null;
+};
+
 type Persona = {
   id: string;
   nome: string;
@@ -38,6 +46,23 @@ type Attivita = {
   tipo_commessa: string | null;
   titolo_commessa: string | null;
   persone: Persona[];
+};
+
+type AttivitaRow = {
+  id: string;
+  titolo: string;
+  data_inizio: string;
+  giorni: number;
+  commessa_id: string | null;
+  commesse:
+    | { titolo: string | null; tipo_commessa: string | null }
+    | { titolo: string | null; tipo_commessa: string | null }[]
+    | null;
+  attivita_personale:
+    | {
+        personale: Persona | Persona[] | null;
+      }[]
+    | null;
 };
 
 type Appuntamento = {
@@ -80,6 +105,13 @@ type VoceStudio = {
   created_at: string;
 };
 
+type PersonaTodo = {
+  id: string;
+  nome: string;
+  email: string | null;
+  attivo: boolean;
+};
+
 type CommessaMappa = {
   id: string;
   titolo: string;
@@ -90,12 +122,45 @@ type CommessaMappa = {
   priorita: Priorita | null;
 };
 
-const SIMBOLO_TIPO: Record<string, string> = {
-  Pubblica: "\u25A0",
-  Privata: "\u25CF",
-  Gara: "\u25B2",
-  Concorso: "\u2691",
-};
+const COLLEGAMENTI_RAPIDI = [
+  {
+    nome: "Agenzia delle Entrate",
+    icona: "building" as AppIconName,
+    href: "https://www.agenziaentrate.gov.it/portale/",
+    colore: "bg-[#256B8F]",
+  },
+  {
+    nome: "Geoportale Salerno",
+    icona: "map" as AppIconName,
+    href: "https://geoportale.provincia.salerno.it/gfmaplet/?token=NULLNULLNULLNULL",
+    colore: "bg-[#4F7C3A]",
+  },
+  {
+    nome: "Inarcassa",
+    icona: "briefcase" as AppIconName,
+    href: "https://www.inarcassa.it/group/iol/homeiol",
+    colore: "bg-[#9B3E4F]",
+  },
+  {
+    nome: "Ordine Ingegneri Salerno",
+    icona: "users" as AppIconName,
+    href: "https://ordineingsa.it/",
+    colore: "bg-[#40529B]",
+  },
+  {
+    nome: "NAS FIDEPA",
+    icona: "fileText" as AppIconName,
+    href: "https://fidepa.quickconnect.to/",
+    colore: "bg-[#237F8D]",
+  },
+] as const;
+
+const DashboardMap = dynamic(
+  () => import("@/components/DashboardMap").then((mod) => mod.default),
+  {
+    ssr: false,
+  }
+);
 
 function getRelazioneSingola<T>(valore: T | T[] | null | undefined) {
   if (Array.isArray(valore)) {
@@ -111,41 +176,20 @@ export default function Home() {
   const [appuntamenti, setAppuntamenti] = useState<Appuntamento[]>([]);
   const [argomenti, setArgomenti] = useState<ArgomentoRiunione[]>([]);
   const [listaStudio, setListaStudio] = useState<VoceStudio[]>([]);
+  const [personaleTodo, setPersonaleTodo] = useState<PersonaTodo[]>([]);
   const [commesseMappa, setCommesseMappa] = useState<CommessaMappa[]>([]);
+  const [mostraTutteVoci, setMostraTutteVoci] = useState(false);
+  const [todoDaInviare, setTodoDaInviare] = useState<VoceStudio | null>(null);
+  const [destinatarioTodo, setDestinatarioTodo] = useState("");
+  const [invioTodo, setInvioTodo] = useState(false);
+  const [messaggioTodo, setMessaggioTodo] = useState("");
   const [offsetCalendarioDashboard, setOffsetCalendarioDashboard] =
     useState(0);
-
-  const DashboardMap = dynamic(
-    () => import("@/components/DashboardMap").then((mod) => mod.default),
-    {
-      ssr: false,
-    }
-  );
 
   const [nuovoArgomento, setNuovoArgomento] = useState("");
   const [nuovaVoceStudio, setNuovaVoceStudio] = useState("");
 
   const [caricamento, setCaricamento] = useState(true);
-
-  const oggi = new Date().toISOString().slice(0, 10);
-
-  const prossimiGiorni = useMemo(() => {
-    const giorni: Date[] = [];
-    const base = new Date();
-    base.setHours(0, 0, 0, 0);
-
-    for (let i = 0; i < 14; i++) {
-      const giorno = new Date(base);
-      giorno.setDate(base.getDate() + i);
-      giorni.push(giorno);
-    }
-
-    return giorni;
-  }, []);
-
-  useEffect(() => {
-    caricaDashboard();
-  }, []);
 
   async function caricaDashboard() {
     setCaricamento(true);
@@ -156,6 +200,7 @@ export default function Home() {
       caricaAppuntamenti(),
       caricaArgomenti(),
       caricaListaStudio(),
+      caricaPersonaleTodo(),
       caricaCommesseMappa(),
     ]);
 
@@ -189,17 +234,15 @@ export default function Home() {
       return;
     }
 
-    const aggiornamentiNormalizzati: Aggiornamento[] = (data || []).map(
-      (item: any) => ({
+    const aggiornamentiNormalizzati: Aggiornamento[] = (
+      (data || []) as AggiornamentoRow[]
+    ).map((item) => ({
         id: item.id,
         testo: item.testo,
         data_nota: item.data_nota,
         created_at: item.created_at,
-        commesse: Array.isArray(item.commesse)
-          ? item.commesse[0] || null
-          : item.commesse,
-      })
-    );
+        commesse: getRelazioneSingola(item.commesse),
+      }));
 
     setAggiornamenti(aggiornamentiNormalizzati);
   }
@@ -236,21 +279,25 @@ export default function Home() {
     }
 
     const normalizzate =
-      data?.map((item: any) => ({
+      (data as AttivitaRow[] | null)?.map((item) => {
+        const commessa = getRelazioneSingola(item.commesse);
+
+        return {
         id: item.id,
         titolo: item.titolo,
         data_inizio: item.data_inizio,
         giorni: item.giorni,
         commessa_id: item.commessa_id,
-        tipo_commessa: item.commesse?.tipo_commessa || null,
-        titolo_commessa: item.commesse?.titolo || null,
+        tipo_commessa: commessa?.tipo_commessa || null,
+        titolo_commessa: commessa?.titolo || null,
         persone:
           item.attivita_personale
-            ?.map((rel: any) => rel.personale)
+            ?.map((rel) => getRelazioneSingola(rel.personale))
             .filter(Boolean) || [],
-      })) || [];
+        };
+      }) || [];
 
-    setAttivita(normalizzate);
+    setAttivita(normalizzate as Attivita[]);
   }
 
   async function caricaAppuntamenti() {
@@ -327,6 +374,22 @@ export default function Home() {
     }
 
     setListaStudio(data || []);
+  }
+
+  async function caricaPersonaleTodo() {
+    const { data, error } = await supabase
+      .from("personale")
+      .select("id, nome, email, attivo")
+      .eq("attivo", true)
+      .order("nome", { ascending: true });
+
+    if (error) {
+      console.error(error);
+      setPersonaleTodo([]);
+      return;
+    }
+
+    setPersonaleTodo((data || []) as PersonaTodo[]);
   }
 
   async function caricaCommesseMappa() {
@@ -411,26 +474,6 @@ export default function Home() {
     setNuovaVoceStudio("");
   }
 
-  async function toggleVoceStudio(item: VoceStudio) {
-    const nuovoValore = !item.completato;
-
-    const { error } = await supabase
-      .from("lista_studio")
-      .update({ completato: nuovoValore })
-      .eq("id", item.id);
-
-    if (error) {
-      alert("Errore durante l'aggiornamento della voce.");
-      return;
-    }
-
-    setListaStudio((correnti) =>
-      correnti.map((voce) =>
-        voce.id === item.id ? { ...voce, completato: nuovoValore } : voce
-      )
-    );
-  }
-
   async function eliminaVoceStudio(id: string) {
     const { error } = await supabase.from("lista_studio").delete().eq("id", id);
 
@@ -442,97 +485,171 @@ export default function Home() {
     setListaStudio((correnti) => correnti.filter((item) => item.id !== id));
   }
 
-  function formattaData(data: string | null) {
-    if (!data) return "-";
-    return new Date(data).toLocaleDateString("it-IT");
-  }
+  async function inviaPromemoriaTodo() {
+    if (!todoDaInviare || !destinatarioTodo) return;
 
-  function isWeekend(data: Date) {
-    const giorno = data.getDay();
-    return giorno === 0 || giorno === 6;
-  }
+    setInvioTodo(true);
+    setMessaggioTodo("");
 
-  function normalizzaData(data: Date) {
-    return new Date(data.getFullYear(), data.getMonth(), data.getDate());
-  }
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-  function aggiungiGiorniLavorativi(
-    dataInizio: Date,
-    giorniLavorativi: number
-  ) {
-    const data = new Date(dataInizio);
-    let giorniConteggiati = isWeekend(data) ? 0 : 1;
-
-    while (giorniConteggiati < giorniLavorativi) {
-      data.setDate(data.getDate() + 1);
-
-      if (!isWeekend(data)) {
-        giorniConteggiati++;
-      }
+    if (!session) {
+      setInvioTodo(false);
+      setMessaggioTodo("Sessione non valida. Effettua nuovamente l'accesso.");
+      return;
     }
 
-    return data;
+    try {
+      const response = await fetch("/api/todo/notifica", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          personaId: destinatarioTodo,
+          testo: todoDaInviare.testo,
+        }),
+      });
+      const risultato = (await response.json()) as {
+        error?: string;
+        destinatario?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(risultato.error || "Invio non riuscito.");
+      }
+
+      setMessaggioTodo(
+        `Promemoria inviato a ${risultato.destinatario || "destinatario"}.`
+      );
+    } catch (error) {
+      setMessaggioTodo(
+        error instanceof Error ? error.message : "Invio non riuscito."
+      );
+    } finally {
+      setInvioTodo(false);
+    }
   }
 
-  function attivitaNelGiorno(giorno: Date) {
-    if (isWeekend(giorno)) return [];
+  useEffect(() => {
+    // I dati della dashboard vengono richiesti dopo il primo rendering.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    caricaDashboard();
+    // Il caricamento iniziale deve avvenire una sola volta all'apertura.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    return attivita.filter((item) => {
-      const inizio = new Date(item.data_inizio);
-      const fine = aggiungiGiorniLavorativi(
-        inizio,
-        Number(item.giorni || 1)
-      );
-
-      return (
-        normalizzaData(giorno) >= normalizzaData(inizio) &&
-        normalizzaData(giorno) <= normalizzaData(fine)
-      );
-    });
-  }
+  const vociStudioVisibili = mostraTutteVoci
+    ? listaStudio
+    : listaStudio.slice(0, 5);
+  const destinatariTodo = personaleTodo.filter((persona) =>
+    Boolean(persona.email?.trim())
+  );
 
   return (
     <LayoutApp>
-      <div className="space-y-6">
-
+      <div className="space-y-5 xl:space-y-6">
         {caricamento ? (
-          <p className="text-center text-gray-500 py-10">
-            Caricamento dashboard...
-          </p>
+          <div className="min-h-[50vh] flex items-center justify-center">
+            <div className="flex items-center gap-3 text-sm text-gray-500">
+              <span className="h-8 w-8 rounded-xl bg-white shadow-sm flex items-center justify-center text-[#5E9AD3]">
+                <AppIcon name="refresh" size={17} className="animate-spin" />
+              </span>
+              Caricamento dashboard...
+            </div>
+          </div>
         ) : (
           <>
+            <nav
+              aria-label="Collegamenti rapidi"
+              className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3"
+            >
+              {COLLEGAMENTI_RAPIDI.map((collegamento) => (
+                <a
+                  key={collegamento.nome}
+                  href={collegamento.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group min-h-[78px] bg-white border border-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] rounded-2xl p-3.5 flex items-center gap-3 text-[#2B2F5E] hover:-translate-y-0.5 hover:border-[#D79D06]/35 hover:shadow-[0_14px_30px_rgba(43,47,94,0.12)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D79D06] transition"
+                  title={"Apri " + collegamento.nome}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={
+                      collegamento.colore +
+                      " w-12 h-12 shrink-0 rounded-xl flex items-center justify-center text-white shadow-sm group-hover:scale-[1.04] transition"
+                    }
+                  >
+                    <AppIcon name={collegamento.icona} size={21} />
+                  </span>
+
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[14px] font-semibold leading-tight">
+                      {collegamento.nome}
+                    </span>
+                  </span>
+
+                  <span
+                    aria-hidden="true"
+                    className="h-8 w-8 shrink-0 rounded-xl bg-[#F2F2F2] flex items-center justify-center text-gray-400 group-hover:bg-[#D79D06]/10 group-hover:text-[#D79D06] transition"
+                  >
+                    <AppIcon name="externalLink" size={15} />
+                  </span>
+                </a>
+              ))}
+            </nav>
 
             <Card
+              className="shadow-[0_12px_32px_rgba(43,47,94,0.08)]"
+              bodyClassName="p-4 sm:p-5"
               title={
-                <div className="flex items-center justify-between gap-3">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setOffsetCalendarioDashboard((corrente) => corrente - 1)
-                    }
-                    className="text-[#2B2F5E] text-2xl leading-none px-2 hover:text-[#D79D06] transition cursor-pointer"
-                    aria-label="Giorni precedenti"
-                  >
-                    &lsaquo;
-                  </button>
-
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <Link
                     href="/attivita/calendario"
-                    className="flex-1 text-center hover:text-[#D79D06] transition"
+                    className="flex items-center gap-3 hover:text-[#D79D06] transition"
                   >
-                    Calendario attivit&agrave; in corso
+                    <span className="h-9 w-9 rounded-xl bg-[#5E9AD3]/12 text-[#2D80B3] flex items-center justify-center">
+                      <AppIcon name="calendar" size={18} />
+                    </span>
+                    <span className="font-semibold">
+                      Calendario attività in corso
+                    </span>
                   </Link>
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setOffsetCalendarioDashboard((corrente) => corrente + 1)
-                    }
-                    className="text-[#2B2F5E] text-2xl leading-none px-2 hover:text-[#D79D06] transition cursor-pointer"
-                    aria-label="Giorni successivi"
-                  >
-                    &rsaquo;
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setOffsetCalendarioDashboard(0)}
+                      className="h-9 px-3 rounded-xl border border-gray-200 bg-white text-xs font-semibold text-[#2B2F5E] hover:border-[#5E9AD3] hover:text-[#2D80B3] cursor-pointer"
+                    >
+                      Oggi
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOffsetCalendarioDashboard((corrente) => corrente - 1)
+                      }
+                      className="h-9 w-9 rounded-xl border border-gray-200 bg-white text-[#2B2F5E] text-xl flex items-center justify-center hover:border-[#D79D06] hover:text-[#D79D06] cursor-pointer"
+                      aria-label="Giorni precedenti"
+                      title="Giorni precedenti"
+                    >
+                      {"\u2039"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOffsetCalendarioDashboard((corrente) => corrente + 1)
+                      }
+                      className="h-9 w-9 rounded-xl border border-gray-200 bg-white text-[#2B2F5E] text-xl flex items-center justify-center hover:border-[#D79D06] hover:text-[#D79D06] cursor-pointer"
+                      aria-label="Giorni successivi"
+                      title="Giorni successivi"
+                    >
+                      {"\u203a"}
+                    </button>
+                  </div>
                 </div>
               }
             >
@@ -546,9 +663,19 @@ export default function Home() {
               </Link>
             </Card>
 
-            <div className="grid grid-cols-1 xl:grid-cols-[1fr_1fr] gap-4 items-stretch">
-              <Card title={<>Ultimi aggiornamenti attivit&agrave;</>}>
-                <div className="space-y-3">
+            <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1.04fr)_minmax(0,0.96fr)] gap-5 items-stretch">
+              <Card
+                title={
+                  <span className="flex items-center gap-3 font-semibold">
+                    <span className="h-9 w-9 rounded-xl bg-[#5E9AD3]/12 text-[#2D80B3] flex items-center justify-center">
+                      <AppIcon name="activity" size={18} />
+                    </span>
+                    Ultimi aggiornamenti attività
+                  </span>
+                }
+                bodyClassName="p-5"
+              >
+                <div className="relative max-h-[840px] overflow-y-auto pr-2">
                   {aggiornamenti.length === 0 ? (
                     <p className="text-sm text-gray-400">
                       Nessun aggiornamento presente.
@@ -556,39 +683,52 @@ export default function Home() {
                   ) : (
                     aggiornamenti.map((item) => {
                       const tipo = item.commesse?.tipo_commessa || "";
-                      const simbolo = tipo ? SIMBOLO_TIPO[tipo] || "" : "";
+                      const markerClass =
+                        tipo === "Privata"
+                          ? "bg-[#D49324]"
+                          : tipo === "Concorso"
+                            ? "bg-[#64B445]"
+                            : tipo === "Gara"
+                              ? "bg-[#2B2F5E]"
+                              : "bg-[#2D80B3]";
 
                       const contenuto = (
-                        <>
-                          <p className="text-[13px] text-[#D79D06]">
+                        <div className="relative pl-9 pb-5 last:pb-0">
+                          <span className="absolute left-[11px] top-5 bottom-0 w-px bg-gray-200" />
+                          <span
+                            className={
+                              "absolute left-1 top-1 h-4 w-4 rounded-full border-[3px] border-white shadow-sm " +
+                              markerClass
+                            }
+                          />
+                          <p className="text-[11px] font-semibold uppercase text-[#D79D06]">
                             {new Date(item.created_at).toLocaleDateString("it-IT")}{" "}
                             {new Date(item.created_at).toLocaleTimeString("it-IT", {
                               hour: "2-digit",
                               minute: "2-digit",
                             })}
                           </p>
-
-                          <p className="text-[14px] text-[#2B2F5E] leading-snug">
-                            <span className="font-semibold">
-                              {simbolo} {item.commesse?.titolo || "Commessa"}
-                            </span>{" "}
-                            - {item.testo}
+                          <p className="mt-1 text-[14px] font-semibold text-[#2B2F5E] leading-snug">
+                            {item.commesse?.titolo || "Commessa"}
                           </p>
-                        </>
+                          <p className="mt-1 text-[13px] text-gray-500 leading-relaxed">
+                            {item.testo}
+                          </p>
+                        </div>
                       );
 
                       return item.commesse?.id ? (
                         <Link
                           key={item.id}
-                          href={`/commesse/${item.commesse.id}`}
-                          className="block border-b border-gray-100 pb-3 last:border-b-0 last:pb-0 hover:bg-[#FAFAFA] transition"
+                          href={"/commesse/" + item.commesse.id}
+                          className="block rounded-xl hover:bg-[#F2F2F2]/65 transition"
                         >
                           {contenuto}
                         </Link>
                       ) : (
                         <div
                           key={item.id}
-                          className="border-b border-gray-100 pb-3 last:border-b-0 last:pb-0"
+                          className="rounded-xl"
                         >
                           {contenuto}
                         </div>
@@ -598,10 +738,18 @@ export default function Home() {
                 </div>
               </Card>
 
-              <div className="grid grid-rows-[250px_auto] gap-4">
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-[250px]">
-                  <Card title="Argomenti prossima riunione">
+              <div className="flex min-w-0 flex-col gap-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <Card
+                    title={
+                      <span className="flex items-center gap-3 font-semibold">
+                        <span className="h-9 w-9 rounded-xl bg-[#D79D06]/12 text-[#D79D06] flex items-center justify-center">
+                          <AppIcon name="message" size={18} />
+                        </span>
+                        Prossima riunione
+                      </span>
+                    }
+                  >
                     <div className="flex gap-2 mb-4">
                       <input
                         value={nuovoArgomento}
@@ -610,19 +758,21 @@ export default function Home() {
                           if (e.key === "Enter") aggiungiArgomento();
                         }}
                         placeholder="Aggiungi argomento..."
-                        className="flex-1 border border-gray-300 rounded-md px-4 py-3 bg-transparent outline-none transition focus:bg-white focus:border-[#64B445] focus:shadow-sm text-[14px] text-[#2B2F5E]"
+                        className="min-w-0 flex-1 border border-gray-200 rounded-xl px-4 py-3 bg-[#F2F2F2]/70 outline-none focus:bg-white focus:border-[#64B445] focus:ring-4 focus:ring-[#64B445]/10 text-[13px] text-[#2B2F5E]"
                       />
 
                       <button
                         type="button"
                         onClick={aggiungiArgomento}
-                        className="bg-[#64B445] text-white w-12 h-12 rounded-md text-2xl font-light hover:bg-[#5AA03E] hover:scale-105 transition flex items-center justify-center shadow-sm cursor-pointer"
+                        className="bg-[#64B445] text-white w-11 h-11 shrink-0 rounded-xl hover:bg-[#5AA03E] hover:-translate-y-0.5 flex items-center justify-center shadow-sm cursor-pointer"
+                        aria-label="Aggiungi argomento"
+                        title="Aggiungi"
                       >
-                        +
+                        <AppIcon name="plus" size={19} />
                       </button>
                     </div>
 
-                    <div className="space-y-2">
+                    <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
                       {argomenti.length === 0 ? (
                         <p className="text-sm text-gray-400">
                           Nessun argomento inserito.
@@ -631,18 +781,22 @@ export default function Home() {
                         argomenti.map((item) => (
                           <div
                             key={item.id}
-                            className="flex justify-between items-start gap-3 border-b border-gray-100 pb-2 last:border-b-0"
+                            className="flex items-center gap-2.5 rounded-xl bg-[#F2F2F2]/75 px-3 py-2.5"
                           >
-                            <p className="text-[14px] text-[#2B2F5E]">
+                            <span className="text-[#D79D06] shrink-0">
+                              <AppIcon name="message" size={15} />
+                            </span>
+                            <p className="min-w-0 flex-1 text-[13px] text-[#2B2F5E] leading-snug">
                               {item.testo}
                             </p>
-
                             <button
                               type="button"
                               onClick={() => eliminaArgomento(item.id)}
-                              className="text-red-500 hover:text-red-700 text-lg font-semibold transition cursor-pointer"
+                              className="h-7 w-7 shrink-0 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-50 hover:text-red-600 cursor-pointer"
+                              aria-label="Rimuovi argomento"
+                              title="Rimuovi"
                             >
-                              &times;
+                              <AppIcon name="x" size={14} />
                             </button>
                           </div>
                         ))
@@ -650,7 +804,16 @@ export default function Home() {
                     </div>
                   </Card>
 
-                  <Card title="To Do">
+                  <Card
+                    title={
+                      <span className="flex items-center gap-3 font-semibold">
+                        <span className="h-9 w-9 rounded-xl bg-[#64B445]/12 text-[#64B445] flex items-center justify-center">
+                          <AppIcon name="listTodo" size={18} />
+                        </span>
+                        To Do
+                      </span>
+                    }
+                  >
                     <div className="flex gap-2 mb-4">
                       <input
                         value={nuovaVoceStudio}
@@ -659,15 +822,17 @@ export default function Home() {
                           if (e.key === "Enter") aggiungiVoceStudio();
                         }}
                         placeholder="Es. comprare carta, toner, cancelleria..."
-                        className="flex-1 border border-gray-300 rounded-md px-4 py-3 bg-transparent outline-none transition focus:bg-white focus:border-[#64B445] focus:shadow-sm text-[14px] text-[#2B2F5E]"
+                        className="min-w-0 flex-1 border border-gray-200 rounded-xl px-4 py-3 bg-[#F2F2F2]/70 outline-none focus:bg-white focus:border-[#64B445] focus:ring-4 focus:ring-[#64B445]/10 text-[13px] text-[#2B2F5E]"
                       />
 
                       <button
                         type="button"
                         onClick={aggiungiVoceStudio}
-                        className="bg-[#64B445] text-white w-12 h-12 rounded-md text-2xl font-light hover:bg-[#5AA03E] hover:scale-105 transition flex items-center justify-center shadow-sm cursor-pointer"
+                        className="bg-[#64B445] text-white w-11 h-11 shrink-0 rounded-xl hover:bg-[#5AA03E] hover:-translate-y-0.5 flex items-center justify-center shadow-sm cursor-pointer"
+                        aria-label="Aggiungi attività"
+                        title="Aggiungi"
                       >
-                        +
+                        <AppIcon name="plus" size={19} />
                       </button>
                     </div>
 
@@ -677,49 +842,172 @@ export default function Home() {
                           Nessuna voce inserita.
                         </p>
                       ) : (
-                        listaStudio.map((item) => (
+                        vociStudioVisibili.map((item) => (
                           <div
                             key={item.id}
-                            className="flex justify-between items-center gap-3 border-b border-gray-100 pb-2 last:border-b-0"
+                            className="flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-[#F2F2F2]/75"
                           >
+                            <span className="h-7 w-7 shrink-0 rounded-lg bg-[#64B445]/10 text-[#64B445] flex items-center justify-center">
+                              <AppIcon name="listTodo" size={14} />
+                            </span>
+                            <span className="min-w-0 flex-1 text-[13px] leading-snug text-[#2B2F5E]">
+                              {item.testo}
+                            </span>
+
                             <button
                               type="button"
-                              onClick={() => toggleVoceStudio(item)}
-                              className={`text-left flex-1 text-[14px] cursor-pointer ${
-                                item.completato
-                                  ? "text-gray-400 line-through"
-                                  : "text-[#2B2F5E]"
-                              }`}
+                              onClick={() => {
+                                setTodoDaInviare(item);
+                                setDestinatarioTodo("");
+                                setMessaggioTodo("");
+                              }}
+                              className="h-8 w-8 shrink-0 rounded-lg flex items-center justify-center text-[#2D80B3] hover:bg-[#5E9AD3]/10 cursor-pointer"
+                              aria-label={"Invia promemoria per " + item.testo}
+                              title="Invia promemoria email"
                             >
-                              {item.testo}
+                              <AppIcon name="mail" size={15} />
                             </button>
 
                             <button
                               type="button"
                               onClick={() => eliminaVoceStudio(item.id)}
-                              className="text-red-500 hover:text-red-700 text-lg font-semibold transition cursor-pointer"
+                              className="h-7 w-7 shrink-0 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-50 hover:text-red-600 cursor-pointer"
+                              aria-label="Elimina voce"
+                              title="Elimina"
                             >
-                              &times;
+                              <AppIcon name="x" size={14} />
                             </button>
                           </div>
                         ))
                       )}
                     </div>
+
+                    {listaStudio.length > 5 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setMostraTutteVoci((corrente) => !corrente)
+                        }
+                        className="mt-3 text-xs font-semibold text-[#2D80B3] hover:text-[#D79D06] cursor-pointer"
+                      >
+                        {mostraTutteVoci ? "Mostra meno" : "Vedi tutte"}
+                      </button>
+                    )}
                   </Card>
 
-                </div>  
+                </div>
 
-                <Card title="Mappa commesse" bodyClassName="h-full">
+                <Card
+                  title={
+                    <span className="flex items-center gap-3 font-semibold">
+                      <span className="h-9 w-9 rounded-xl bg-[#5E9AD3]/12 text-[#2D80B3] flex items-center justify-center">
+                        <AppIcon name="map" size={18} />
+                      </span>
+                      Mappa commesse
+                    </span>
+                  }
+                  bodyClassName="p-3 sm:p-4"
+                >
                   <DashboardMap commesse={commesseMappa} />
                 </Card>
-
               </div>
-
             </div>
-
           </>
         )}
       </div>
+
+      {todoDaInviare && (
+        <div className="fixed inset-0 z-[1200] bg-[#2B2F5E]/45 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-[0_24px_60px_rgba(43,47,94,0.22)]">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <span className="h-11 w-11 shrink-0 rounded-xl bg-[#5E9AD3]/12 text-[#2D80B3] flex items-center justify-center">
+                  <AppIcon name="mail" size={20} />
+                </span>
+                <div>
+                  <h2 className="text-lg font-semibold text-[#2B2F5E]">
+                    Invia promemoria
+                  </h2>
+                  <p className="mt-1 text-sm text-gray-500 leading-relaxed">
+                    Seleziona la persona a cui ricordare questa attivit&agrave;.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTodoDaInviare(null)}
+                className="h-9 w-9 rounded-xl flex items-center justify-center text-gray-400 hover:bg-[#F2F2F2] hover:text-[#2B2F5E] cursor-pointer"
+                aria-label="Chiudi"
+              >
+                <AppIcon name="x" size={18} />
+              </button>
+            </div>
+
+            <div className="mt-5 rounded-xl border border-gray-100 bg-[#F2F2F2]/70 px-4 py-3">
+              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#D79D06]">
+                Promemoria
+              </p>
+              <p className="mt-1 text-sm font-medium text-[#2B2F5E] leading-relaxed">
+                {todoDaInviare.testo}
+              </p>
+            </div>
+
+            <label className="mt-5 block text-sm font-semibold text-[#2B2F5E]">
+              Destinatario
+              <select
+                value={destinatarioTodo}
+                onChange={(event) => setDestinatarioTodo(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-normal text-[#2B2F5E] outline-none focus:border-[#5E9AD3] focus:ring-4 focus:ring-[#5E9AD3]/10"
+              >
+                <option value="">Seleziona una persona</option>
+                {destinatariTodo.map((persona) => (
+                  <option key={persona.id} value={persona.id}>
+                    {persona.nome} - {persona.email}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {destinatariTodo.length === 0 && (
+              <p className="mt-3 text-sm text-[#D79D06]">
+                Nessuna persona attiva ha un indirizzo email configurato.
+              </p>
+            )}
+
+            {messaggioTodo && (
+              <p
+                className={
+                  "mt-4 rounded-xl px-4 py-3 text-sm " +
+                  (messaggioTodo.startsWith("Promemoria inviato")
+                    ? "bg-[#64B445]/10 text-[#4F7C3A]"
+                    : "bg-red-50 text-red-600")
+                }
+              >
+                {messaggioTodo}
+              </p>
+            )}
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setTodoDaInviare(null)}
+                className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-[#2B2F5E] hover:bg-[#F2F2F2] cursor-pointer"
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                onClick={inviaPromemoriaTodo}
+                disabled={!destinatarioTodo || invioTodo}
+                className="rounded-xl bg-[#5E9AD3] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#2D80B3] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center gap-2"
+              >
+                <AppIcon name="mail" size={16} />
+                {invioTodo ? "Invio..." : "Invia promemoria"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </LayoutApp>
   );
 }
@@ -736,14 +1024,18 @@ function Card({
   className?: string;
 }) {
   return (
-    <div className={`bg-white border border-gray-200 shadow-sm rounded-sm overflow-hidden ${className}`}>
-      <div className="bg-white border border-gray-200 shadow-sm rounded-sm overflow-hidden h-full">
-        <div className="px-4 py-3 border-b border-gray-200 bg-[#FAFAFA]">
-          <div className="text-[17px] font-normal text-[#2B2F5E]">{title}</div>
+    <section
+      className={
+        "h-full overflow-hidden rounded-2xl border border-white bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] " +
+        className
+      }
+    >
+      <div className="px-4 sm:px-5 py-3.5 border-b border-gray-100 bg-white">
+        <div className="text-[15px] sm:text-[16px] font-medium text-[#2B2F5E]">
+          {title}
         </div>
-
-        <div className={`p-4 ${bodyClassName}`}>{children}</div>
       </div>
-    </div> 
+      <div className={"p-4 " + bodyClassName}>{children}</div>
+    </section>
   );
 }

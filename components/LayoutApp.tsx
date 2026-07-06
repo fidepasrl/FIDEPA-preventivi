@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import AppSidebar from "./AppSidebar";
 import AppFeedbackButton from "./AppFeedbackButton";
 import Topbar from "./Topbar";
@@ -8,15 +11,22 @@ export default function LayoutApp({
 }: {
   children: React.ReactNode;
 }) {
+  const [sidebarMobileAperta, setSidebarMobileAperta] = useState(false);
+
   return (
     <AuthGuard>
       <div className="min-h-screen bg-[#F2F2F2]">
-        <Topbar />
+        <Topbar
+          onToggleSidebar={() => setSidebarMobileAperta((corrente) => !corrente)}
+        />
 
-        <div className="flex">
-          <AppSidebar />
+        <div className="flex items-start">
+          <AppSidebar
+            mobileOpen={sidebarMobileAperta}
+            onClose={() => setSidebarMobileAperta(false)}
+          />
 
-          <main className="flex-1 min-h-[calc(100vh-4rem)] p-6 pb-28 overflow-x-hidden">
+          <main className="min-w-0 flex-1 min-h-[calc(100vh-4.5rem)] p-4 sm:p-5 xl:p-7 pb-28 overflow-x-hidden">
             {children}
           </main>
         </div>

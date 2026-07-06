@@ -28,6 +28,7 @@ drop policy if exists "appuntamenti_commesse_select"
 create policy "appuntamenti_commesse_select"
   on public.appuntamenti_commesse
   for select
+  to authenticated
   using (true);
 
 drop policy if exists "appuntamenti_commesse_insert"
@@ -36,6 +37,7 @@ drop policy if exists "appuntamenti_commesse_insert"
 create policy "appuntamenti_commesse_insert"
   on public.appuntamenti_commesse
   for insert
+  to authenticated
   with check (true);
 
 drop policy if exists "appuntamenti_commesse_update"
@@ -44,6 +46,7 @@ drop policy if exists "appuntamenti_commesse_update"
 create policy "appuntamenti_commesse_update"
   on public.appuntamenti_commesse
   for update
+  to authenticated
   using (true)
   with check (true);
 
@@ -53,4 +56,5 @@ drop policy if exists "appuntamenti_commesse_delete"
 create policy "appuntamenti_commesse_delete"
   on public.appuntamenti_commesse
   for delete
+  to authenticated
   using (true);

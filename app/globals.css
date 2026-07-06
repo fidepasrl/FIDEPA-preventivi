@@ -14,9 +14,10 @@
 }
 
 body {
-  background: var(--background);
+  background: #f2f2f2;
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
 }
 
 .menu-item,
@@ -25,8 +26,9 @@ body {
   align-items: center;
   gap: 0.75rem;
   width: 100%;
-  padding: 0.75rem 1rem;
-  border-radius: 0.75rem;
+  min-height: 3rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: 0.875rem;
   color: #2b2f5e;
   font-weight: 500;
   transition: all 0.2s ease;
@@ -43,7 +45,28 @@ body {
 
 .menu-item:hover,
 .menu-item-button:hover {
-  background-color: #e8e8e8;
+  background-color: rgba(255, 255, 255, 0.72);
+  transform: translateX(2px);
+}
+
+.menu-icon {
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.7rem;
+  color: #2d80b3;
+  background: rgba(94, 154, 211, 0.11);
+  transition: all 0.2s ease;
+}
+
+.menu-item:hover .menu-icon,
+.menu-item-button:hover .menu-icon,
+.menu-item-active .menu-icon {
+  color: #ffffff;
+  background: #5e9ad3;
 }
 
 .menu-item-disabled {
@@ -59,9 +82,9 @@ body {
 }
 
 .submenu {
-  margin-left: 1.55rem;
-  padding-left: 1.25rem;
-  border-left: 1px solid #b8bfd0;
+  margin: 0.35rem 0 0.45rem 2.45rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid rgba(43, 47, 94, 0.16);
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
@@ -71,8 +94,8 @@ body {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 0.55rem 0.75rem;
-  border-radius: 0.6rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: 0.75rem;
   color: #2b2f5e;
   font-size: 0.95rem;
   font-weight: 500;
@@ -80,7 +103,8 @@ body {
 }
 
 .submenu-item:hover {
-  background-color: #e8e8e8;
+  background-color: rgba(255, 255, 255, 0.72);
+  color: #2d80b3;
 }
 
 .submenu-item-disabled {
@@ -99,21 +123,23 @@ body {
   align-items: center;
   gap: 0.75rem;
   width: 100%;
-  padding: 0.75rem 1rem;
-  border-radius: 0.25rem;
+  min-height: 3rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: 0.875rem;
   color: #2b2f5e;
   background-color: white;
   font-weight: 600;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 22px rgba(43, 47, 94, 0.08);
+  transition: all 0.2s ease;
 }
 
 .menu-item-active::before {
   content: "";
   position: absolute;
-  left: -0.3rem;
-  top: 0.65rem;
-  bottom: 0.65rem;
-  width: 3px;
+  left: -0.28rem;
+  top: 0.75rem;
+  bottom: 0.75rem;
+  width: 4px;
   border-radius: 999px;
   background-color: #0b73c9;
 }
@@ -123,19 +149,19 @@ body {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 0.75rem 1rem;
-  border-radius: 0.25rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: 0.75rem;
   color: #2b2f5e;
   background-color: white;
   font-size: 0.95rem;
   font-weight: 600;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 5px 16px rgba(43, 47, 94, 0.07);
 }
 
 .submenu-item-active::before {
   content: "";
   position: absolute;
-  left: -1.25rem;
+  left: -0.82rem;
   top: 0.65rem;
   bottom: 0.65rem;
   width: 3px;
@@ -148,6 +174,14 @@ body {
   font-weight: 700;
   color: #2b2f5e;
   line-height: 1.2;
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  transition: all 0.2s ease;
 }
 
 .leaflet-container {
