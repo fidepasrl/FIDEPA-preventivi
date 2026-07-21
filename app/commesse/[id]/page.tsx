@@ -3,12 +3,17 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import LayoutApp from "@/components/LayoutApp";
-import ImportoInput from "@/components/ImportoInput";
+import AppIcon from "@/components/AppIcon";
+import { saveAs } from "file-saver";
 import { supabase } from "@/lib/supabase";
-import { finalizzaInputImporto, parseImporto } from "@/lib/importi";
+import { creaCartellaStandardCommessa } from "@/lib/cartellaStandardCommessa";
+import {
+  SIMBOLO_TIPO_COMMESSA,
+  TIPI_COMMESSA,
+  type TipoCommessa,
+} from "@/lib/tipiCommesse";
 
 type Priorita = "Urgente" | "Alta" | "Normale" | "Bassa" | "Terminato";
-type TipoCommessa = "Pubblica" | "Privata" | "Gara" | "Concorso";
 
 type Cliente = {
   id: string;
@@ -35,8 +40,6 @@ type Commessa = {
   tipo_commessa: TipoCommessa;
   priorita: Priorita;
   url: string | null;
-  importo_lavori: number | string | null;
-  importo_commessa: number | string | null;
   data_inizio: string | null;
   data_fine: string | null;
 };
@@ -49,13 +52,25 @@ type CommessaElenco = {
   tipo_commessa: TipoCommessa;
 };
 
-type PreventivoCollegato = {
+type Professionista = {
   id: string;
-  numero: string;
-  data: string;
-  cliente: string;
-  oggetto: string;
-  totale: number;
+  nome: string | null;
+  cognome: string | null;
+  professione: string | null;
+};
+
+type RelazioneSupabase<T> = T | T[] | null | undefined;
+
+type CollaboratoreCommessaRow = {
+  id: string;
+  professionista_id: string;
+  professionisti: RelazioneSupabase<Professionista>;
+};
+
+type CollaboratoreCommessa = {
+  id: string;
+  professionista_id: string;
+  professionista: Professionista | null;
 };
 
 type Nota = {
@@ -74,19 +89,53 @@ const PRIORITA: Priorita[] = [
   "Terminato",
 ];
 
-const TIPI_COMMESSA: TipoCommessa[] = [
-  "Pubblica",
-  "Privata",
-  "Gara",
-  "Concorso",
-];
+function getRelazioneSingola<T>(valore: RelazioneSupabase<T>) {
+  if (Array.isArray(valore)) {
+    return valore[0] || null;
+  }
 
-const SIMBOLO_TIPO: Record<TipoCommessa, string> = {
-  Pubblica: "■",
-  Privata: "●",
-  Gara: "▲",
-  Concorso: "⚑",
-};
+  return valore || null;
+}
+
+function getNomeProfessionista(professionista: Professionista) {
+  return `${professionista.nome || ""} ${professionista.cognome || ""}`.trim();
+}
+
+function getTestoRicercaProfessionista(professionista: Professionista) {
+  const cognomeNome = `${professionista.cognome || ""} ${
+    professionista.nome || ""
+  }`.trim();
+
+  return `${getNomeProfessionista(professionista)} ${cognomeNome} ${
+    professionista.professione || ""
+  }`.toLowerCase();
+}
+
+function creaProfessionistaDaNome(
+  nomeCompleto: string
+): Pick<Professionista, "nome" | "cognome" | "professione"> {
+  const parti = nomeCompleto.split(/\s+/).filter(Boolean);
+
+  if (parti.length === 1) {
+    return {
+      nome: parti[0],
+      cognome: null,
+      professione: null,
+    };
+  }
+
+  return {
+    nome: parti.slice(0, -1).join(" "),
+    cognome: parti[parti.length - 1],
+    professione: null,
+  };
+}
+
+function ordinaProfessionisti(a: Professionista, b: Professionista) {
+  return getNomeProfessionista(a).localeCompare(getNomeProfessionista(b), "it", {
+    sensitivity: "base",
+  });
+}
 
 export default function DettaglioCommessaPage() {
   const params = useParams();
@@ -96,6 +145,11 @@ export default function DettaglioCommessaPage() {
   const [elencoCommesse, setElencoCommesse] = useState<CommessaElenco[]>([]);
   const [note, setNote] = useState<Nota[]>([]);
   const [clienti, setClienti] = useState<Cliente[]>([]);
+  const [professionisti, setProfessionisti] = useState<Professionista[]>([]);
+  const [collaboratori, setCollaboratori] = useState<CollaboratoreCommessa[]>(
+    []
+  );
+  const [ricercaCollaboratore, setRicercaCollaboratore] = useState("");
   const [clienteSelezionato, setClienteSelezionato] =
     useState<Cliente | null>(null);
 
@@ -107,11 +161,6 @@ export default function DettaglioCommessaPage() {
   const [salvataggioInCorso, setSalvataggioInCorso] =
     useState(false);
 
-  const [preventivoCollegato, setPreventivoCollegato] = useState<PreventivoCollegato | null>(null);
-  const [popupPreventivi, setPopupPreventivi] = useState(false);
-  const [elencoPreventivi, setElencoPreventivi] = useState<PreventivoCollegato[]>([]);
-  const [caricamentoPreventivi, setCaricamentoPreventivi] = useState(false);
-
   const suggerimentiClienti = clienti.filter((cliente) => {
     if (!commessa?.cliente_nome?.trim()) return false;
     if (clienteSelezionato?.cliente === commessa.cliente_nome) return false;
@@ -120,6 +169,31 @@ export default function DettaglioCommessaPage() {
       .toLowerCase()
       .includes(commessa.cliente_nome.toLowerCase());
   });
+
+  const professionistiGiaCollegati = new Set(
+    collaboratori.map((collaboratore) => collaboratore.professionista_id)
+  );
+  const testoCollaboratore = ricercaCollaboratore.trim().toLowerCase();
+  const suggerimentiProfessionisti = professionisti
+    .filter((professionista) => !professionistiGiaCollegati.has(professionista.id))
+    .filter((professionista) =>
+      testoCollaboratore
+        ? getTestoRicercaProfessionista(professionista).includes(
+            testoCollaboratore
+          )
+        : false
+    )
+    .slice(0, 5);
+  const professionistaGiaEsistente = professionisti.some(
+    (professionista) =>
+      getNomeProfessionista(professionista).toLowerCase() ===
+        testoCollaboratore ||
+      `${professionista.cognome || ""} ${professionista.nome || ""}`
+        .trim()
+        .toLowerCase() === testoCollaboratore
+  );
+  const mostraAggiungiRubrica =
+    ricercaCollaboratore.trim().length > 0 && !professionistaGiaEsistente;
 
   useEffect(() => {
     caricaPagina();
@@ -152,7 +226,13 @@ export default function DettaglioCommessaPage() {
 
   async function caricaPagina() {
     setCaricamento(true);
-    await Promise.all([caricaClienti(), caricaCommessa(), caricaElencoCommesse()]);
+    await Promise.all([
+      caricaClienti(),
+      caricaProfessionisti(),
+      caricaCollaboratori(),
+      caricaCommessa(),
+      caricaElencoCommesse(),
+    ]);
     setCaricamento(false);
   }
 
@@ -169,6 +249,55 @@ export default function DettaglioCommessaPage() {
     }
 
     setClienti(data || []);
+  }
+
+  async function caricaProfessionisti() {
+    const { data, error } = await supabase
+      .from("professionisti")
+      .select("id, nome, cognome, professione")
+      .order("cognome", { ascending: true })
+      .order("nome", { ascending: true });
+
+    if (error) {
+      console.error("Errore caricamento professionisti:", error);
+      setProfessionisti([]);
+      return;
+    }
+
+    setProfessionisti((data || []) as Professionista[]);
+  }
+
+  async function caricaCollaboratori() {
+    const { data, error } = await supabase
+      .from("commesse_collaboratori")
+      .select(
+        `
+          id,
+          professionista_id,
+          professionisti (
+            id,
+            nome,
+            cognome,
+            professione
+          )
+        `
+      )
+      .eq("commessa_id", id)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("Errore caricamento collaboratori commessa:", error);
+      setCollaboratori([]);
+      return;
+    }
+
+    setCollaboratori(
+      ((data || []) as CollaboratoreCommessaRow[]).map((item) => ({
+        id: item.id,
+        professionista_id: item.professionista_id,
+        professionista: getRelazioneSingola(item.professionisti),
+      }))
+    );
   }
 
   async function caricaElencoCommesse() {
@@ -194,11 +323,7 @@ export default function DettaglioCommessaPage() {
             .single();
 
         if (!error && data) {
-            setCommessa({
-              ...data,
-              importo_lavori: finalizzaInputImporto(data.importo_lavori),
-              importo_commessa: finalizzaInputImporto(data.importo_commessa),
-            });
+            setCommessa(data);
 
             if (data.cliente_id) {
                 const { data: clienteData } = await supabase
@@ -210,8 +335,6 @@ export default function DettaglioCommessaPage() {
                 if (clienteData) {
                     setClienteSelezionato(clienteData);
                 }
-
-                await caricaPreventivoCollegato(id);
 
             } else {
             setClienteSelezionato(null);
@@ -329,8 +452,6 @@ export default function DettaglioCommessaPage() {
           commessa.tipo_commessa === "Concorso"
             ? commessa.url || null
             : null,
-        importo_lavori: parseImporto(commessa.importo_lavori),
-        importo_commessa: parseImporto(commessa.importo_commessa),
         data_inizio: commessa.data_inizio || null,
         data_fine: dataFine,
       })
@@ -348,8 +469,6 @@ export default function DettaglioCommessaPage() {
       cliente_id: clienteFinale?.id || commessa.cliente_id,
       cliente_nome: clienteFinale?.cliente || commessa.cliente_nome,
       data_fine: dataFine,
-      importo_lavori: finalizzaInputImporto(commessa.importo_lavori),
-      importo_commessa: finalizzaInputImporto(commessa.importo_commessa),
     });
 
     await caricaElencoCommesse();
@@ -492,60 +611,94 @@ export default function DettaglioCommessaPage() {
     }
   }
 
-  async function caricaPreventivoCollegato(commessa_id_preventivo: string | null) {
-    if (!commessa_id_preventivo) return;
-    const { data } = await supabase
-      .from("preventivi")
-      .select("id, numero, data, cliente, oggetto, totale")
-      .eq("commessa_id", commessa_id_preventivo)
-      .maybeSingle();
-    if (data) setPreventivoCollegato(data);
-  }
-
-  async function apriPopupPreventivi() {
-    setPopupPreventivi(true);
-    setCaricamentoPreventivi(true);
-    const { data } = await supabase
-      .from("preventivi")
-      .select("id, numero, data, cliente, oggetto, totale")
-      .is("commessa_id", null)
-      .order("created_at", { ascending: false });
-    setElencoPreventivi(data || []);
-    setCaricamentoPreventivi(false);
-  }
-
-  async function collegaPreventivo(preventivo: PreventivoCollegato) {
-    const { error } = await supabase
-      .from("preventivi")
-      .update({ commessa_id: id })
-      .eq("id", preventivo.id);
-    if (error) { alert("Errore durante il collegamento del preventivo."); return; }
-    setPreventivoCollegato(preventivo);
-    setPopupPreventivi(false);
-  }
-
-  async function scollegaPreventivo() {
-    if (!preventivoCollegato) return;
-    const conferma = window.confirm("Vuoi scollegare questo preventivo dalla commessa?");
-    if (!conferma) return;
-    const { error } = await supabase
-      .from("preventivi")
-      .update({ commessa_id: null })
-      .eq("id", preventivoCollegato.id);
-    if (error) { alert("Errore durante lo scollegamento."); return; }
-    setPreventivoCollegato(null);
-  }
-
   function formattaData(data: string | null) {
     if (!data) return "-";
     return new Date(data).toLocaleDateString("it-IT");
   }
 
-  function formatEuro(valore: number | null) {
-    return Number(valore || 0).toLocaleString("it-IT", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+  function scaricaCartellaStandard() {
+    if (!commessa) return;
+
+    const cartella = creaCartellaStandardCommessa({
+      codice: commessa.codice,
+      titolo: commessa.titolo,
+      posizione: commessa.posizione,
+      tipo_commessa: commessa.tipo_commessa,
     });
+
+    saveAs(cartella.blob, `${cartella.nome}.zip`);
+  }
+
+  async function aggiungiCollaboratore(professionista: Professionista) {
+    if (professionistiGiaCollegati.has(professionista.id)) return;
+
+    const { data, error } = await supabase
+      .from("commesse_collaboratori")
+      .insert({
+        commessa_id: id,
+        professionista_id: professionista.id,
+      })
+      .select("id, professionista_id")
+      .single();
+
+    if (error) {
+      alert(
+        "Errore durante l'aggiunta del collaboratore. Verifica che la tabella commesse_collaboratori sia aggiornata."
+      );
+      console.error("Errore aggiunta collaboratore:", error);
+      return;
+    }
+
+    setCollaboratori((correnti) => [
+      ...correnti,
+      {
+        id: data.id,
+        professionista_id: data.professionista_id,
+        professionista,
+      },
+    ]);
+    setRicercaCollaboratore("");
+  }
+
+  async function aggiungiProfessionistaAllaRubrica() {
+    const nomeCompleto = ricercaCollaboratore.trim();
+    if (!nomeCompleto) return;
+
+    const payload = creaProfessionistaDaNome(nomeCompleto);
+    const { data, error } = await supabase
+      .from("professionisti")
+      .insert(payload)
+      .select("id, nome, cognome, professione")
+      .single();
+
+    if (error) {
+      alert("Errore durante l'aggiunta del professionista alla rubrica.");
+      console.error("Errore creazione professionista:", error);
+      return;
+    }
+
+    const nuovoProfessionista = data as Professionista;
+    setProfessionisti((correnti) =>
+      [...correnti, nuovoProfessionista].sort(ordinaProfessionisti)
+    );
+    await aggiungiCollaboratore(nuovoProfessionista);
+  }
+
+  async function rimuoviCollaboratore(collaboratore: CollaboratoreCommessa) {
+    const { error } = await supabase
+      .from("commesse_collaboratori")
+      .delete()
+      .eq("id", collaboratore.id);
+
+    if (error) {
+      alert("Errore durante la rimozione del collaboratore.");
+      console.error("Errore rimozione collaboratore:", error);
+      return;
+    }
+
+    setCollaboratori((correnti) =>
+      correnti.filter((item) => item.id !== collaboratore.id)
+    );
   }
 
   if (caricamento) {
@@ -619,7 +772,7 @@ export default function DettaglioCommessaPage() {
                           }`}
                         >
                           <span className="mr-2">
-                            {SIMBOLO_TIPO[item.tipo_commessa]}
+                            {SIMBOLO_TIPO_COMMESSA[item.tipo_commessa]}
                           </span>
 
                           {item.titolo}
@@ -649,6 +802,16 @@ export default function DettaglioCommessaPage() {
             <div className="flex gap-3">
               <button
                 type="button"
+                onClick={scaricaCartellaStandard}
+                className="h-12 w-12 inline-flex items-center justify-center border border-gray-300 text-[#2B2F5E] rounded-md bg-white hover:bg-[#e8e8e8] transition cursor-pointer"
+                title="Scarica cartella standard"
+                aria-label="Scarica cartella standard"
+              >
+                <AppIcon name="folder" size={22} />
+              </button>
+
+              <button
+                type="button"
                 onClick={salvaCommessa}
                 disabled={salvataggioInCorso}
                 className={`px-5 py-3 rounded-md text-sm font-medium transition cursor-pointer text-white ${
@@ -669,58 +832,6 @@ export default function DettaglioCommessaPage() {
               >
                 Chiudi
               </button>
-            </div>
-          </div>
-
-          <div className="bg-white border border-gray-200 shadow-sm rounded-sm overflow-hidden mb-3">
-            <div className="px-4 py-3 border-b border-gray-200 bg-[#FAFAFA] flex justify-between items-center">
-              <div>
-                <h3 className="text-[17px] font-normal text-[#2B2F5E]">Preventivo collegato</h3>
-                <p className="text-[15px] text-[#D79D06] mt-0">
-                  {preventivoCollegato ? "Preventivo associato a questa commessa" : "Nessun preventivo collegato"}
-                </p>
-              </div>
-              {!preventivoCollegato && (
-                <button
-                  type="button"
-                  onClick={apriPopupPreventivi}
-                  className="bg-[#64B445] text-white px-5 py-3 rounded-md text-sm font-medium hover:bg-[#5AA03E] transition cursor-pointer"
-                >
-                  Collega preventivo
-                </button>
-              )}
-            </div>
-
-            <div className="p-4">
-              {preventivoCollegato ? (
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="text-[15px] font-semibold text-[#2B2F5E]">
-                      Preventivo n. {preventivoCollegato.numero}
-                    </p>
-                    <p className="text-[13px] text-[#D79D06] mt-0.5">
-                      {preventivoCollegato.cliente} — {preventivoCollegato.data}
-                    </p>
-                    <p className="text-[13px] text-gray-500 mt-1 line-clamp-1">
-                      {preventivoCollegato.oggetto}
-                    </p>
-                    <p className="text-[20px] font-bold text-[#64B445] mt-2">
-                      € {Number(preventivoCollegato.totale).toLocaleString("it-IT", { minimumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={scollegaPreventivo}
-                    className="border border-gray-300 text-[#2B2F5E] px-4 py-2 rounded-md text-sm bg-transparent hover:bg-[#e8e8e8] transition cursor-pointer"
-                  >
-                    Scollega
-                  </button>
-                </div>
-              ) : (
-                <p className="text-[13px] text-gray-400 text-center py-4">
-                  Clicca "Collega preventivo" per associare un preventivo dall'archivio.
-                </p>
-              )}
             </div>
           </div>
 
@@ -985,18 +1096,6 @@ export default function DettaglioCommessaPage() {
                 </div>
               )}
 
-              <CampoImporto
-                label="Importo lavori"
-                value={String(commessa.importo_lavori || "")}
-                onChange={(value) => aggiornaCampo("importo_lavori", value)}
-              />
-
-              <CampoImporto
-                label="Importo commessa"
-                value={String(commessa.importo_commessa || "")}
-                onChange={(value) => aggiornaCampo("importo_commessa", value)}
-              />
-
               <Campo
                 label="Data inizio"
                 type="date"
@@ -1011,59 +1110,100 @@ export default function DettaglioCommessaPage() {
                 onChange={(value) => aggiornaCampo("data_fine", value)}
               />
 
+              <div className="md:col-span-2 rounded-md border border-gray-200 bg-[#FAFAFA] p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h4 className="text-[15px] font-semibold text-[#2B2F5E]">
+                      Collaboratori
+                    </h4>
+                  </div>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {collaboratori.length === 0 ? (
+                    <p className="text-[13px] text-gray-400">
+                      Nessun collaboratore collegato.
+                    </p>
+                  ) : (
+                    collaboratori.map((collaboratore) => (
+                      <div
+                        key={collaboratore.id}
+                        className="flex items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-[14px] font-semibold text-[#2B2F5E] truncate">
+                            {collaboratore.professionista
+                              ? getNomeProfessionista(collaboratore.professionista)
+                              : "Professionista non trovato"}
+                          </p>
+                          <p className="text-[12px] text-[#D79D06] truncate">
+                            {collaboratore.professionista?.professione ||
+                              "Professione non indicata"}
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => rimuoviCollaboratore(collaboratore)}
+                          className="h-8 w-8 shrink-0 rounded-md text-red-500 hover:bg-red-50 hover:text-red-700 flex items-center justify-center cursor-pointer"
+                          title="Rimuovi collaboratore"
+                          aria-label="Rimuovi collaboratore"
+                        >
+                          <AppIcon name="x" size={16} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="relative mt-4">
+                  <input
+                    type="text"
+                    value={ricercaCollaboratore}
+                    onChange={(event) => setRicercaCollaboratore(event.target.value)}
+                    placeholder="Scrivi il nome del professionista"
+                    className="w-full border border-gray-300 rounded-md px-4 py-3 bg-white outline-none transition focus:border-[#64B445] focus:shadow-sm"
+                  />
+
+                  {testoCollaboratore && suggerimentiProfessionisti.length > 0 && (
+                    <div className="absolute z-40 mt-1 w-full overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg">
+                      {suggerimentiProfessionisti.map((professionista) => (
+                        <button
+                          key={professionista.id}
+                          type="button"
+                          onClick={() => aggiungiCollaboratore(professionista)}
+                          className="w-full text-left px-4 py-3 hover:bg-[#e8e8e8] transition cursor-pointer"
+                        >
+                          <p className="text-[14px] font-semibold text-[#2B2F5E]">
+                            {getNomeProfessionista(professionista)}
+                          </p>
+                          <p className="text-[12px] text-[#D79D06]">
+                            {professionista.professione ||
+                              "Professione non indicata"}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {mostraAggiungiRubrica && (
+                  <button
+                    type="button"
+                    onClick={aggiungiProfessionistaAllaRubrica}
+                    className="mt-3 inline-flex items-center gap-2 rounded-md bg-[#64B445] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#5AA03E] transition cursor-pointer"
+                  >
+                    <AppIcon name="plus" size={16} />
+                    Aggiungi alla rubrica
+                  </button>
+                )}
+              </div>
+
             </Card>
           </div>
         </div>
       </div>
 
-      {popupPreventivi && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6">
-          <div className="bg-white rounded-sm shadow-2xl w-full max-w-2xl p-8 max-h-[80vh] flex flex-col">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-xl font-semibold text-[#2B2F5E]">Collega preventivo</h3>
-                <p className="text-sm text-gray-500 mt-1">Seleziona un preventivo dall'archivio</p>
-              </div>
-              <button type="button" onClick={() => setPopupPreventivi(false)}
-                className="text-2xl text-gray-400 hover:text-[#2B2F5E] cursor-pointer">×</button>
-            </div>
-
-            <div className="overflow-y-auto flex-1">
-              {caricamentoPreventivi ? (
-                <p className="text-center text-gray-500 py-10">Caricamento preventivi...</p>
-              ) : elencoPreventivi.length === 0 ? (
-                <p className="text-center text-gray-500 py-10">Nessun preventivo disponibile da collegare.</p>
-              ) : (
-                <div className="space-y-2">
-                  {elencoPreventivi.map((preventivo) => (
-                    <button key={preventivo.id} type="button"
-                      onClick={() => collegaPreventivo(preventivo)}
-                      className="w-full text-left border border-gray-200 rounded-sm p-4 hover:border-[#64B445] hover:bg-[#f6fbf4] transition cursor-pointer"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="text-[15px] font-semibold text-[#2B2F5E]">
-                            Preventivo n. {preventivo.numero}
-                          </p>
-                          <p className="text-[13px] text-[#D79D06] mt-0.5">
-                            {preventivo.cliente} — {preventivo.data}
-                          </p>
-                          <p className="text-[13px] text-gray-500 mt-1 line-clamp-1">
-                            {preventivo.oggetto}
-                          </p>
-                        </div>
-                        <p className="text-[18px] font-bold text-[#64B445] whitespace-nowrap ml-4">
-                          € {Number(preventivo.totale).toLocaleString("it-IT", { minimumFractionDigits: 2 })}
-                        </p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
     </LayoutApp>
   );
@@ -1110,26 +1250,6 @@ function Campo({
   );
 }
 
-function CampoImporto({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div>
-      <label className="block text-sm font-medium mb-2 text-[#2B2F5E]">
-        {label}
-      </label>
-
-      <ImportoInput value={value} onChange={onChange} />
-    </div>
-  );
-}
-
 function SelectCampo({
   label,
   value,
@@ -1138,7 +1258,7 @@ function SelectCampo({
 }: {
   label: string;
   value: string;
-  options: string[];
+  options: readonly string[];
   onChange: (value: string) => void;
 }) {
   return (

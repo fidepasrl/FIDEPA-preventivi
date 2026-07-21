@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import LayoutApp from "@/components/LayoutApp";
 import { supabase } from "@/lib/supabase";
+import { getSimboloTipoCommessa } from "@/lib/tipiCommesse";
 
 type Persona = {
   id: string;
@@ -66,13 +67,6 @@ const ALTEZZA_RIGA_ATTIVITA = 38;
 const ALTEZZA_BARRA_ATTIVITA = 34;
 const INTERVALLO_CAMBIO_GIORNI_WHEEL = 450;
 const SOGLIA_CAMBIO_GIORNI_WHEEL = 35;
-
-const SIMBOLO_TIPO: Record<string, string> = {
-  Pubblica: "■",
-  Privata: "●",
-  Gara: "▲",
-  Concorso: "⚑",
-};
 
 function getRelazioneSingola<T>(valore: RelazioneSupabase<T>) {
   if (Array.isArray(valore)) {
@@ -646,7 +640,7 @@ export default function PersonalePage() {
                                     <div className="leading-tight">
                                         <p>
                                             {item.tipo_commessa
-                                            ? `${SIMBOLO_TIPO[item.tipo_commessa] || ""} ${
+                                            ? `${getSimboloTipoCommessa(item.tipo_commessa)} ${
                                                 item.titolo_commessa || ""
                                                 }`
                                             : "Attività libera"}

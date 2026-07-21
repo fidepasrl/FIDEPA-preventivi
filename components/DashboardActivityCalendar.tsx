@@ -7,6 +7,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
+import { getSimboloTipoCommessa } from "@/lib/tipiCommesse";
 
 type Persona = {
   id: string;
@@ -56,13 +57,6 @@ type BarraAppuntamento = {
 
 type BarraCalendario = BarraAttivita | BarraAppuntamento;
 
-const SIMBOLO_TIPO: Record<string, string> = {
-  Pubblica: "■",
-  Privata: "●",
-  Gara: "▲",
-  Concorso: "⚑",
-};
-
 const NUMERO_GIORNI = 11;
 const INDICE_GIORNO_CORRENTE = Math.floor(NUMERO_GIORNI / 2);
 const ALTEZZA_RIGA = 42;
@@ -100,7 +94,7 @@ export default function DashboardActivityCalendar({
 
       const titoloCommessa =
         item.commessa_id && item.tipo_commessa
-          ? `${SIMBOLO_TIPO[item.tipo_commessa] || ""} ${
+          ? `${getSimboloTipoCommessa(item.tipo_commessa)} ${
               item.titolo_commessa || ""
             }`
           : "Attivita libera";
@@ -394,7 +388,7 @@ function getTitoloCommessaAppuntamento(item: Appuntamento) {
     return item.descrizione;
   }
 
-  const simbolo = item.tipo_commessa ? SIMBOLO_TIPO[item.tipo_commessa] || "" : "";
+  const simbolo = getSimboloTipoCommessa(item.tipo_commessa);
   return `${simbolo} ${item.titolo_commessa || "Commessa"}`.trim();
 }
 

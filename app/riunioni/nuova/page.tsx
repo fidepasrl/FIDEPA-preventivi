@@ -3,9 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import LayoutApp from "@/components/LayoutApp";
 import { supabase } from "@/lib/supabase";
+import {
+  SIMBOLO_TIPO_COMMESSA,
+  type TipoCommessa,
+} from "@/lib/tipiCommesse";
 
 type Priorita = "Urgente" | "Alta" | "Normale" | "Bassa" | "Terminato";
-type TipoCommessa = "Pubblica" | "Privata" | "Gara" | "Concorso";
 
 type Commessa = {
   id: string;
@@ -46,13 +49,6 @@ const PRIORITA: Priorita[] = [
   "Bassa",
   "Terminato",
 ];
-
-const SIMBOLO_TIPO: Record<TipoCommessa, string> = {
-  Pubblica: "■",
-  Privata: "●",
-  Gara: "▲",
-  Concorso: "⚑",
-};
 
 export default function NuovaRiunionePage() {
   const [commesse, setCommesse] = useState<Commessa[]>([]);
@@ -350,7 +346,7 @@ export default function NuovaRiunionePage() {
                           }`}
                         >
                           <span className="mr-2">
-                            {SIMBOLO_TIPO[commessa.tipo_commessa]}
+                            {SIMBOLO_TIPO_COMMESSA[commessa.tipo_commessa]}
                           </span>
 
                           {commessa.titolo}

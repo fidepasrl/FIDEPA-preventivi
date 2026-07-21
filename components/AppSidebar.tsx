@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import AppIcon, { type AppIconName } from "@/components/AppIcon";
+import { isAdminOrDeveloperRole, normalizeRole } from "@/lib/roles";
 import { supabase } from "@/lib/supabase";
 
 export default function AppSidebar({
@@ -25,11 +26,15 @@ export default function AppSidebar({
   const [requisitiOpen, setRequisitiOpen] = useState(
     pathname.startsWith("/requisiti")
   );
+  const [economiaOpen, setEconomiaOpen] = useState(
+    pathname.startsWith("/economia")
+  );
   const [attivitaOpen, setAttivitaOpen] = useState(
     pathname.startsWith("/attivita")
   );
   const [confermaUscita, setConfermaUscita] = useState<string | null>(null);
   const [consiglio, setConsiglio] = useState("");
+  const [ruolo, setRuolo] = useState("user");
 
   const isPreventivoInCompilazione =
     pathname.startsWith("/preventivo/nuovo") ||
@@ -69,11 +74,31 @@ export default function AppSidebar({
     setConsiglio(casuale.testo);
   }
 
+  async function caricaRuolo() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return;
+
+    const { data } = await supabase
+      .from("profili_utente")
+      .select("ruolo")
+      .eq("id", user.id)
+      .single();
+
+    setRuolo(normalizeRole(data?.ruolo));
+  }
+
   useEffect(() => {
     // Il consiglio viene caricato dal database dopo il primo rendering.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     caricaConsiglioCasuale();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    caricaRuolo();
   }, []);
+
+  const puoVedereEconomia = isAdminOrDeveloperRole(ruolo);
 
   return (
     <>
@@ -203,6 +228,31 @@ export default function AppSidebar({
             />
           </SidebarGroup>
 
+          {puoVedereEconomia && (
+            <SidebarGroup
+              icon="euro"
+              label="Gestione Economica"
+              open={economiaOpen}
+              onClick={() => setEconomiaOpen((corrente) => !corrente)}
+            >
+              <SidebarSubItem
+                label="Report"
+                active={pathname === "/economia"}
+                onClick={() => gestisciNavigazione("/economia")}
+              />
+              <SidebarSubItem
+                label="Commesse"
+                active={pathname === "/economia/commesse"}
+                onClick={() => gestisciNavigazione("/economia/commesse")}
+              />
+              <SidebarSubItem
+                label="Costi società"
+                active={pathname === "/economia/costi"}
+                onClick={() => gestisciNavigazione("/economia/costi")}
+              />
+            </SidebarGroup>
+          )}
+
           <SidebarGroup
             icon="addressBook"
             label="Rubrica"
@@ -241,7 +291,7 @@ export default function AppSidebar({
           )}
 
           <div className="px-1 text-[11px] text-[#2B2F5E]/55">
-            Versione 2.2.2 - Creato da Antonio Carbone
+            Versione 2.3.0 - Creato da Antonio Carbone
           </div>
         </div>
       </aside>
@@ -332,11 +382,11 @@ function SidebarGroup({
   return (
     <div>
       <button type="button" onClick={onClick} className="menu-item-button">
-        <span className="flex items-center gap-3">
-          <span className="menu-icon">
-            <AppIcon name={icon} size={18} />
-          </span>
-          <span>{label}</span>
+          <span className="flex items-center gap-3">
+            <span className="menu-icon">
+              <AppIcon name={icon} size={18} />
+            </span>
+          <span className="text-left leading-tight">{label}</span>
         </span>
         <AppIcon
           name="chevronDown"

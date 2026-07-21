@@ -7,8 +7,11 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import AppIcon, { type AppIconName } from "@/components/AppIcon";
 import DashboardActivityCalendar from "@/components/DashboardActivityCalendar";
+import {
+  getColoreBgTipoCommessa,
+  type TipoCommessa,
+} from "@/lib/tipiCommesse";
 
-type TipoCommessa = "Pubblica" | "Privata" | "Gara" | "Concorso";
 type Priorita = "Urgente" | "Alta" | "Normale" | "Bassa" | "Terminato";
 
 type Aggiornamento = {
@@ -683,14 +686,7 @@ export default function Home() {
                   ) : (
                     aggiornamenti.map((item) => {
                       const tipo = item.commesse?.tipo_commessa || "";
-                      const markerClass =
-                        tipo === "Privata"
-                          ? "bg-[#D49324]"
-                          : tipo === "Concorso"
-                            ? "bg-[#64B445]"
-                            : tipo === "Gara"
-                              ? "bg-[#2B2F5E]"
-                              : "bg-[#2D80B3]";
+                      const markerClass = getColoreBgTipoCommessa(tipo);
 
                       const contenuto = (
                         <div className="relative pl-9 pb-5 last:pb-0">

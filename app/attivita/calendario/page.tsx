@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type WheelEvent } from "react";
 import LayoutApp from "@/components/LayoutApp";
 import { supabase } from "@/lib/supabase";
+import { getSimboloTipoCommessa } from "@/lib/tipiCommesse";
 
 type Commessa = {
   id: string;
@@ -181,13 +182,6 @@ export default function CalendarioAttivitaPage() {
 
   const [caricamento, setCaricamento] = useState(true);
   const ultimoCambioMeseWheel = useRef(0);
-
-  const SIMBOLO_TIPO: Record<string, string> = {
-    Pubblica: "■",
-    Privata: "●",
-    Gara: "▲",
-    Concorso: "⚑",
-    };
 
   const anno = meseCorrente.getFullYear();
   const mese = meseCorrente.getMonth();
@@ -981,7 +975,7 @@ export default function CalendarioAttivitaPage() {
       return "Attivita libera";
     }
 
-    const simbolo = SIMBOLO_TIPO[item.tipo_commessa] || "";
+    const simbolo = getSimboloTipoCommessa(item.tipo_commessa);
     return `${simbolo} ${item.titolo_commessa || ""}`.trim();
   }
 
@@ -990,7 +984,7 @@ export default function CalendarioAttivitaPage() {
       return item.descrizione;
     }
 
-    const simbolo = item.tipo_commessa ? SIMBOLO_TIPO[item.tipo_commessa] || "" : "";
+    const simbolo = getSimboloTipoCommessa(item.tipo_commessa);
     return `${simbolo} ${item.titolo_commessa || "Commessa"}`.trim();
   }
 

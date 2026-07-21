@@ -3,9 +3,16 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import LayoutApp from "@/components/LayoutApp";
+import AppIcon from "@/components/AppIcon";
 import ImportoInput from "@/components/ImportoInput";
 import { supabase } from "@/lib/supabase";
 import { parseImporto } from "@/lib/importi";
+import {
+  COLORE_TIPO_COMMESSA,
+  SIMBOLO_TIPO_COMMESSA,
+  TIPI_COMMESSA,
+  type TipoCommessa,
+} from "@/lib/tipiCommesse";
 import {
   DndContext,
   DragEndEvent,
@@ -16,7 +23,6 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 type Priorita = "Urgente" | "Alta" | "Normale" | "Bassa" | "Terminato";
-type TipoCommessa = "Pubblica" | "Privata" | "Gara" | "Concorso";
 
 type Cliente = {
   id: string;
@@ -56,20 +62,6 @@ const PRIORITA: Priorita[] = [
   "Bassa",
   "Terminato",
 ];
-
-const SIMBOLO_TIPO: Record<TipoCommessa, string> = {
-  Pubblica: "■",
-  Privata: "●",
-  Gara: "▲",
-  Concorso: "⚑",
-};
-
-const COLORE_TIPO: Record<TipoCommessa, string> = {
-  Pubblica: "text-[#2D80B3]",
-  Privata: "text-[#D49324]",
-  Gara: "text-[#2B2F5E]",
-  Concorso: "text-[#64B445]",
-};
 
 const STILE_PRIORITA: Record<Priorita, string> = {
   Urgente: "bg-[#d96f4b] text-[#F2F2F2]",
@@ -313,6 +305,28 @@ export default function CommessePage() {
     setModaleAperta(true);
   }
 
+  async function eliminaCommessa(commessa: Commessa) {
+    const conferma = window.confirm(
+      `Eliminare definitivamente la commessa "${commessa.titolo}"?`
+    );
+
+    if (!conferma) return;
+
+    const { error } = await supabase
+      .from("commesse")
+      .delete()
+      .eq("id", commessa.id);
+
+    if (error) {
+      alert(`Errore durante l'eliminazione della commessa: ${error.message}`);
+      return;
+    }
+
+    setCommesse((correnti) =>
+      correnti.filter((item) => item.id !== commessa.id)
+    );
+  }
+
   return (
     <LayoutApp>
       <div>
@@ -372,6 +386,7 @@ export default function CommessePage() {
                         <CommessaDraggableCard
                           key={commessa.id}
                           commessa={commessa}
+                          onDelete={eliminaCommessa}
                         />
                       ))}
                     </div>
@@ -489,7 +504,7 @@ export default function CommessePage() {
               <SelectCampo
                 label="Tipo commessa"
                 value={form.tipo_commessa}
-                options={["Pubblica", "Privata", "Gara", "Concorso"]}
+                options={TIPI_COMMESSA}
                 onChange={(value) =>
                   aggiornaCampo("tipo_commessa", value as TipoCommessa)
                 }
@@ -622,7 +637,7 @@ function SelectCampo({
 }: {
   label: string;
   value: string;
-  options: string[];
+  options: readonly string[];
   onChange: (value: string) => void;
 }) {
   return (
@@ -669,7 +684,13 @@ function PrioritaDropArea({
   );
 }
 
-function CommessaDraggableCard({ commessa }: { commessa: Commessa }) {
+function CommessaDraggableCard({
+  commessa,
+  onDelete,
+}: {
+  commessa: Commessa;
+  onDelete: (commessa: Commessa) => void;
+}) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
       id: commessa.id,
@@ -703,8 +724,10 @@ function CommessaDraggableCard({ commessa }: { commessa: Commessa }) {
           className="flex-1 leading-tight"
         >
           <h3 className="text-[17px] font-normal text-[#2B2F5E]">
-            <span className={`mr-2 ${COLORE_TIPO[commessa.tipo_commessa]}`}>
-              {SIMBOLO_TIPO[commessa.tipo_commessa]}
+            <span
+              className={`mr-2 ${COLORE_TIPO_COMMESSA[commessa.tipo_commessa]}`}
+            >
+              {SIMBOLO_TIPO_COMMESSA[commessa.tipo_commessa]}
             </span>
 
             {commessa.codice
@@ -729,6 +752,20 @@ function CommessaDraggableCard({ commessa }: { commessa: Commessa }) {
             </p>
           )}
         </Link>
+
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onDelete(commessa);
+          }}
+          className="h-9 w-9 rounded-lg text-red-500 hover:bg-red-50 hover:text-red-700 flex items-center justify-center cursor-pointer"
+          title="Elimina commessa"
+          aria-label="Elimina commessa"
+        >
+          <AppIcon name="trash" size={16} />
+        </button>
 
         <Link href={`/commesse/${commessa.id}`} className="text-gray-400">
           ›

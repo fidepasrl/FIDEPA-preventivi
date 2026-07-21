@@ -7,6 +7,11 @@ export function isDeveloperRole(role: string | null | undefined) {
   return normalized === "developer" || normalized === "sviluppatore";
 }
 
+export function isAdminOrDeveloperRole(role: string | null | undefined) {
+  const normalized = normalizeRole(role);
+  return normalized === "admin" || isDeveloperRole(normalized);
+}
+
 export function roleLabel(role: string | null | undefined) {
   const normalized = normalizeRole(role);
 
