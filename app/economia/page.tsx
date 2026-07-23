@@ -181,11 +181,6 @@ export default function EconomiaPage() {
   const [caricamento, setCaricamento] = useState(true);
   const [errore, setErrore] = useState("");
 
-  useEffect(() => {
-    caricaDati();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   async function caricaDati() {
     setCaricamento(true);
     setErrore("");
@@ -203,7 +198,7 @@ export default function EconomiaPage() {
           iva,
           fatturato_come_ing_pascale,
           created_at,
-          commesse (
+          commesse!inner (
             id,
             titolo,
             codice,
@@ -234,6 +229,7 @@ export default function EconomiaPage() {
           )
         `
         )
+        .eq("commesse.lavoro_privato_non_fidepa", false)
         .order("anno", { ascending: false })
         .order("created_at", { ascending: false }),
       supabase
@@ -287,6 +283,16 @@ export default function EconomiaPage() {
     setCostiSocieta((costiRes.data || []) as CostoSocieta[]);
     setCaricamento(false);
   }
+
+  useEffect(() => {
+    async function caricaReportIniziale() {
+      await caricaDati();
+    }
+
+    void caricaReportIniziale();
+    // Il report iniziale deve essere caricato una sola volta all'apertura.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const riepilogo = useMemo(() => {
     const righeAnno = righe.filter((riga) => riga.anno === annoVisualizzato);

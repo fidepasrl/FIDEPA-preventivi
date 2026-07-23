@@ -53,9 +53,11 @@ type AttivitaRow = {
   commesse?: {
     titolo: string | null;
     tipo_commessa: string | null;
+    lavoro_privato_non_fidepa: boolean;
   }[] | {
     titolo: string | null;
     tipo_commessa: string | null;
+    lavoro_privato_non_fidepa: boolean;
   } | null;
   attivita_personale?: {
     personale: RelazioneSupabase<Persona>;
@@ -72,9 +74,11 @@ type AppuntamentoRow = {
   commesse?: {
     titolo: string | null;
     tipo_commessa: string | null;
+    lavoro_privato_non_fidepa: boolean;
   }[] | {
     titolo: string | null;
     tipo_commessa: string | null;
+    lavoro_privato_non_fidepa: boolean;
   } | null;
   appuntamenti_personale?: {
     personale: RelazioneSupabase<Persona>;
@@ -222,6 +226,8 @@ export default function CalendarioAttivitaPage() {
 
   useEffect(() => {
     caricaDati();
+    // I dati del calendario devono essere caricati una sola volta all'apertura.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function caricaDati() {
@@ -232,6 +238,7 @@ export default function CalendarioAttivitaPage() {
         supabase
           .from("commesse")
           .select("id, titolo, codice")
+          .eq("lavoro_privato_non_fidepa", false)
           .order("titolo", { ascending: true }),
         supabase
           .from("personale")
@@ -259,7 +266,8 @@ export default function CalendarioAttivitaPage() {
         giorni,
         commesse (
             titolo,
-            tipo_commessa
+            tipo_commessa,
+            lavoro_privato_non_fidepa
         ),
         attivita_personale (
             personale (
@@ -281,7 +289,12 @@ export default function CalendarioAttivitaPage() {
 
     const righe = (data || []) as AttivitaRow[];
 
-    const normalizzate = righe.map((item) => {
+    const righeVisibili = righe.filter((item) => {
+      const commessa = getRelazioneSingola(item.commesse);
+      return !commessa?.lavoro_privato_non_fidepa;
+    });
+
+    const normalizzate = righeVisibili.map((item) => {
       const commessa = getRelazioneSingola(item.commesse);
 
       return {
@@ -315,7 +328,8 @@ export default function CalendarioAttivitaPage() {
         descrizione,
         commesse (
           titolo,
-          tipo_commessa
+          tipo_commessa,
+          lavoro_privato_non_fidepa
         ),
         appuntamenti_personale (
           personale (
@@ -339,7 +353,12 @@ export default function CalendarioAttivitaPage() {
 
     const righe = (data || []) as AppuntamentoRow[];
 
-    const normalizzati = righe.map((item) => {
+    const righeVisibili = righe.filter((item) => {
+      const commessa = getRelazioneSingola(item.commesse);
+      return !commessa?.lavoro_privato_non_fidepa;
+    });
+
+    const normalizzati = righeVisibili.map((item) => {
       const commessa = getRelazioneSingola(item.commesse);
 
       return {

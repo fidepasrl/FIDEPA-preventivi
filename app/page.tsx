@@ -58,8 +58,16 @@ type AttivitaRow = {
   giorni: number;
   commessa_id: string | null;
   commesse:
-    | { titolo: string | null; tipo_commessa: string | null }
-    | { titolo: string | null; tipo_commessa: string | null }[]
+    | {
+        titolo: string | null;
+        tipo_commessa: string | null;
+        lavoro_privato_non_fidepa: boolean;
+      }
+    | {
+        titolo: string | null;
+        tipo_commessa: string | null;
+        lavoro_privato_non_fidepa: boolean;
+      }[]
     | null;
   attivita_personale:
     | {
@@ -87,9 +95,11 @@ type AppuntamentoRow = {
   commesse?: {
     titolo: string | null;
     tipo_commessa: string | null;
+    lavoro_privato_non_fidepa: boolean;
   }[] | {
     titolo: string | null;
     tipo_commessa: string | null;
+    lavoro_privato_non_fidepa: boolean;
   } | null;
 };
 
@@ -219,7 +229,7 @@ export default function Home() {
         testo,
         data_nota,
         created_at,
-        commesse (
+        commesse!inner (
           id,
           titolo,
           codice,
@@ -227,6 +237,7 @@ export default function Home() {
         )
       `
       )
+      .eq("commesse.lavoro_privato_non_fidepa", false)
       .order("data_nota", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(12);
@@ -262,7 +273,8 @@ export default function Home() {
         commessa_id,
         commesse (
           titolo,
-          tipo_commessa
+          tipo_commessa,
+          lavoro_privato_non_fidepa
         ),
         attivita_personale (
           personale (
@@ -282,23 +294,28 @@ export default function Home() {
     }
 
     const normalizzate =
-      (data as AttivitaRow[] | null)?.map((item) => {
-        const commessa = getRelazioneSingola(item.commesse);
+      (data as AttivitaRow[] | null)
+        ?.filter((item) => {
+          const commessa = getRelazioneSingola(item.commesse);
+          return !commessa?.lavoro_privato_non_fidepa;
+        })
+        .map((item) => {
+          const commessa = getRelazioneSingola(item.commesse);
 
-        return {
-        id: item.id,
-        titolo: item.titolo,
-        data_inizio: item.data_inizio,
-        giorni: item.giorni,
-        commessa_id: item.commessa_id,
-        tipo_commessa: commessa?.tipo_commessa || null,
-        titolo_commessa: commessa?.titolo || null,
-        persone:
-          item.attivita_personale
-            ?.map((rel) => getRelazioneSingola(rel.personale))
-            .filter(Boolean) || [],
-        };
-      }) || [];
+          return {
+            id: item.id,
+            titolo: item.titolo,
+            data_inizio: item.data_inizio,
+            giorni: item.giorni,
+            commessa_id: item.commessa_id,
+            tipo_commessa: commessa?.tipo_commessa || null,
+            titolo_commessa: commessa?.titolo || null,
+            persone:
+              item.attivita_personale
+                ?.map((rel) => getRelazioneSingola(rel.personale))
+                .filter(Boolean) || [],
+          };
+        }) || [];
 
     setAttivita(normalizzate as Attivita[]);
   }
@@ -315,7 +332,8 @@ export default function Home() {
         descrizione,
         commesse (
           titolo,
-          tipo_commessa
+          tipo_commessa,
+          lavoro_privato_non_fidepa
         )
       `
       )
@@ -330,7 +348,12 @@ export default function Home() {
 
     const righe = (data || []) as AppuntamentoRow[];
 
-    const normalizzati = righe.map((item) => {
+    const righeVisibili = righe.filter((item) => {
+      const commessa = getRelazioneSingola(item.commesse);
+      return !commessa?.lavoro_privato_non_fidepa;
+    });
+
+    const normalizzati = righeVisibili.map((item) => {
       const commessa = getRelazioneSingola(item.commesse);
 
       return {
@@ -401,6 +424,7 @@ export default function Home() {
       .select(
         "id, titolo, posizione, latitudine, longitudine, tipo_commessa, priorita"
       )
+      .eq("lavoro_privato_non_fidepa", false)
       .not("latitudine", "is", null)
       .not("longitudine", "is", null)
       .order("titolo", { ascending: true });

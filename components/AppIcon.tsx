@@ -15,11 +15,15 @@ export type AppIconName =
   | "download"
   | "euro"
   | "externalLink"
+  | "facebook"
   | "fileText"
   | "flag"
   | "folder"
+  | "globe"
   | "home"
+  | "instagram"
   | "lightbulb"
+  | "linkedin"
   | "listTodo"
   | "logOut"
   | "map"
@@ -123,6 +127,9 @@ const paths: Record<AppIconName, ReactNode> = {
       <path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
     </>
   ),
+  facebook: (
+    <path d="M14 8h3V4h-3a5 5 0 0 0-5 5v3H6v4h3v5h4v-5h3l1-4h-4V9a1 1 0 0 1 1-1Z" />
+  ),
   fileText: (
     <>
       <path d="M6 2h8l4 4v16H6zM14 2v5h5M9 13h6M9 17h6M9 9h2" />
@@ -135,16 +142,35 @@ const paths: Record<AppIconName, ReactNode> = {
       <path d="M3 10h18" />
     </>
   ),
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" />
+    </>
+  ),
   home: (
     <>
       <path d="m3 11 9-8 9 8" />
       <path d="M5 10v10h14V10M9 20v-6h6v6" />
     </>
   ),
+  instagram: (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="5" />
+      <circle cx="12" cy="12" r="4" />
+      <circle cx="17.5" cy="6.5" r="0.8" fill="currentColor" stroke="none" />
+    </>
+  ),
   lightbulb: (
     <>
       <path d="M9 18h6M10 22h4" />
       <path d="M8.2 14.5A7 7 0 1 1 15.8 14.5C14.7 15.3 14 16.4 14 18h-4c0-1.6-.7-2.7-1.8-3.5z" />
+    </>
+  ),
+  linkedin: (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M8 11v6M8 8v.01M12 17v-6M12 13.5a3 3 0 0 1 6 0V17" />
     </>
   ),
   listTodo: (

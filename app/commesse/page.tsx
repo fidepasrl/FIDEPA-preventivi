@@ -4,9 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import LayoutApp from "@/components/LayoutApp";
 import AppIcon from "@/components/AppIcon";
-import ImportoInput from "@/components/ImportoInput";
 import { supabase } from "@/lib/supabase";
-import { parseImporto } from "@/lib/importi";
 import {
   COLORE_TIPO_COMMESSA,
   SIMBOLO_TIPO_COMMESSA,
@@ -36,6 +34,13 @@ type Cliente = {
   referente: string | null;
 };
 
+type Professionista = {
+  id: string;
+  nome: string | null;
+  cognome: string | null;
+  professione: string | null;
+};
+
 type Commessa = {
   id: string;
   titolo: string;
@@ -47,8 +52,6 @@ type Commessa = {
   tipo_commessa: TipoCommessa;
   priorita: Priorita;
   url: string | null;
-  importo_lavori: number | null;
-  importo_commessa: number | null;
   data_inizio: string | null;
   data_fine: string | null;
   ultimaNota?: string;
@@ -82,13 +85,56 @@ const FORM_INIZIALE = {
   tipo_commessa: "Privata" as TipoCommessa,
   priorita: "Normale" as Priorita,
   url: "",
-  importo_lavori: "",
-  importo_commessa: "",
 };
+
+function getNomeProfessionista(professionista: Professionista) {
+  return `${professionista.nome || ""} ${professionista.cognome || ""}`.trim();
+}
+
+function getTestoRicercaProfessionista(professionista: Professionista) {
+  const cognomeNome = `${professionista.cognome || ""} ${
+    professionista.nome || ""
+  }`.trim();
+
+  return `${getNomeProfessionista(professionista)} ${cognomeNome} ${
+    professionista.professione || ""
+  }`.toLowerCase();
+}
+
+function creaProfessionistaDaNome(
+  nomeCompleto: string
+): Pick<Professionista, "nome" | "cognome" | "professione"> {
+  const parti = nomeCompleto.split(/\s+/).filter(Boolean);
+
+  if (parti.length === 1) {
+    return {
+      nome: parti[0],
+      cognome: null,
+      professione: null,
+    };
+  }
+
+  return {
+    nome: parti.slice(0, -1).join(" "),
+    cognome: parti[parti.length - 1],
+    professione: null,
+  };
+}
+
+function ordinaProfessionisti(a: Professionista, b: Professionista) {
+  return getNomeProfessionista(a).localeCompare(getNomeProfessionista(b), "it", {
+    sensitivity: "base",
+  });
+}
 
 export default function CommessePage() {
   const [commesse, setCommesse] = useState<Commessa[]>([]);
   const [clienti, setClienti] = useState<Cliente[]>([]);
+  const [professionisti, setProfessionisti] = useState<Professionista[]>([]);
+  const [collaboratoriSelezionati, setCollaboratoriSelezionati] = useState<
+    Professionista[]
+  >([]);
+  const [ricercaCollaboratore, setRicercaCollaboratore] = useState("");
   const [clienteSelezionato, setClienteSelezionato] =
     useState<Cliente | null>(null);
 
@@ -105,10 +151,32 @@ export default function CommessePage() {
       .includes(form.cliente_nome.toLowerCase());
   });
 
-  useEffect(() => {
-    caricaCommesse();
-    caricaClienti();
-  }, []);
+  const collaboratoriSelezionatiIds = new Set(
+    collaboratoriSelezionati.map((collaboratore) => collaboratore.id)
+  );
+  const testoCollaboratore = ricercaCollaboratore.trim().toLowerCase();
+  const suggerimentiProfessionisti = professionisti
+    .filter(
+      (professionista) => !collaboratoriSelezionatiIds.has(professionista.id)
+    )
+    .filter((professionista) =>
+      testoCollaboratore
+        ? getTestoRicercaProfessionista(professionista).includes(
+            testoCollaboratore
+          )
+        : false
+    )
+    .slice(0, 5);
+  const professionistaGiaEsistente = professionisti.some(
+    (professionista) =>
+      getNomeProfessionista(professionista).toLowerCase() ===
+        testoCollaboratore ||
+      `${professionista.cognome || ""} ${professionista.nome || ""}`
+        .trim()
+        .toLowerCase() === testoCollaboratore
+  );
+  const mostraAggiungiRubrica =
+    ricercaCollaboratore.trim().length > 0 && !professionistaGiaEsistente;
 
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -163,6 +231,22 @@ export default function CommessePage() {
     setClienti(data || []);
   }
 
+  async function caricaProfessionisti() {
+    const { data, error } = await supabase
+      .from("professionisti")
+      .select("id, nome, cognome, professione")
+      .order("cognome", { ascending: true })
+      .order("nome", { ascending: true });
+
+    if (error) {
+      console.error("Errore caricamento professionisti:", error);
+      setProfessionisti([]);
+      return;
+    }
+
+    setProfessionisti((data || []) as Professionista[]);
+  }
+
   async function caricaCommesse() {
     setCaricamento(true);
 
@@ -202,6 +286,18 @@ export default function CommessePage() {
     setCaricamento(false);
   }
 
+  useEffect(() => {
+    async function caricaDatiIniziali() {
+      await Promise.all([
+        caricaCommesse(),
+        caricaClienti(),
+        caricaProfessionisti(),
+      ]);
+    }
+
+    void caricaDatiIniziali();
+  }, []);
+
   function aggiornaCampo(campo: keyof typeof FORM_INIZIALE, valore: string) {
     setForm((corrente) => ({
       ...corrente,
@@ -216,6 +312,46 @@ export default function CommessePage() {
     }));
 
     setClienteSelezionato(cliente);
+  }
+
+  function aggiungiCollaboratore(professionista: Professionista) {
+    if (collaboratoriSelezionatiIds.has(professionista.id)) return;
+
+    setCollaboratoriSelezionati((correnti) => [
+      ...correnti,
+      professionista,
+    ]);
+    setRicercaCollaboratore("");
+  }
+
+  function rimuoviCollaboratore(professionistaId: string) {
+    setCollaboratoriSelezionati((correnti) =>
+      correnti.filter((professionista) => professionista.id !== professionistaId)
+    );
+  }
+
+  async function aggiungiProfessionistaAllaRubrica() {
+    const nomeCompleto = ricercaCollaboratore.trim();
+    if (!nomeCompleto) return;
+
+    const payload = creaProfessionistaDaNome(nomeCompleto);
+    const { data, error } = await supabase
+      .from("professionisti")
+      .insert(payload)
+      .select("id, nome, cognome, professione")
+      .single();
+
+    if (error) {
+      alert("Errore durante l'aggiunta del professionista alla rubrica.");
+      console.error("Errore creazione professionista:", error);
+      return;
+    }
+
+    const nuovoProfessionista = data as Professionista;
+    setProfessionisti((correnti) =>
+      [...correnti, nuovoProfessionista].sort(ordinaProfessionisti)
+    );
+    aggiungiCollaboratore(nuovoProfessionista);
   }
 
   async function trovaOCreaCliente() {
@@ -278,8 +414,6 @@ export default function CommessePage() {
           form.tipo_commessa === "Gara" || form.tipo_commessa === "Concorso"
             ? form.url.trim() || null
             : null,
-        importo_lavori: parseImporto(form.importo_lavori),
-        importo_commessa: parseImporto(form.importo_commessa),
       })
       .select()
       .single();
@@ -290,18 +424,43 @@ export default function CommessePage() {
       return;
     }
 
+    if (data && collaboratoriSelezionati.length > 0) {
+      const { error: collaboratoriError } = await supabase
+        .from("commesse_collaboratori")
+        .insert(
+          collaboratoriSelezionati.map((collaboratore) => ({
+            commessa_id: data.id,
+            professionista_id: collaboratore.id,
+          }))
+        );
+
+      if (collaboratoriError) {
+        console.error(
+          "Errore collegamento collaboratori alla commessa:",
+          collaboratoriError
+        );
+        alert(
+          "La commessa è stata creata, ma non è stato possibile collegare i collaboratori."
+        );
+      }
+    }
+
     if (data) {
       setCommesse((correnti) => [data, ...correnti]);
     }
 
     setForm(FORM_INIZIALE);
     setClienteSelezionato(null);
+    setCollaboratoriSelezionati([]);
+    setRicercaCollaboratore("");
     setModaleAperta(false);
   }
 
   function apriNuovaCommessa() {
     setForm(FORM_INIZIALE);
     setClienteSelezionato(null);
+    setCollaboratoriSelezionati([]);
+    setRicercaCollaboratore("");
     setModaleAperta(true);
   }
 
@@ -530,17 +689,93 @@ export default function CommessePage() {
                 </div>
               )}
 
-              <CampoImporto
-                label="Importo lavori"
-                value={form.importo_lavori}
-                onChange={(value) => aggiornaCampo("importo_lavori", value)}
-              />
+              <div className="md:col-span-2 rounded-md border border-gray-200 bg-[#FAFAFA] p-4">
+                <h4 className="text-[15px] font-semibold text-[#2B2F5E]">
+                  Collaboratori
+                </h4>
 
-              <CampoImporto
-                label="Importo commessa"
-                value={form.importo_commessa}
-                onChange={(value) => aggiornaCampo("importo_commessa", value)}
-              />
+                <div className="mt-4 space-y-2">
+                  {collaboratoriSelezionati.length === 0 ? (
+                    <p className="text-[13px] text-gray-400">
+                      Nessun collaboratore selezionato.
+                    </p>
+                  ) : (
+                    collaboratoriSelezionati.map((collaboratore) => (
+                      <div
+                        key={collaboratore.id}
+                        className="flex items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-[14px] font-semibold text-[#2B2F5E]">
+                            {getNomeProfessionista(collaboratore)}
+                          </p>
+                          <p className="truncate text-[12px] text-[#D79D06]">
+                            {collaboratore.professione ||
+                              "Professione non indicata"}
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => rimuoviCollaboratore(collaboratore.id)}
+                          className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-red-500 hover:bg-red-50 hover:text-red-700"
+                          title="Rimuovi collaboratore"
+                          aria-label="Rimuovi collaboratore"
+                        >
+                          <AppIcon name="x" size={16} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="relative mt-4">
+                  <input
+                    type="text"
+                    value={ricercaCollaboratore}
+                    onChange={(event) =>
+                      setRicercaCollaboratore(event.target.value)
+                    }
+                    placeholder="Scrivi il nome del professionista"
+                    className="w-full border border-gray-300 rounded-md px-4 py-3 bg-white outline-none transition focus:border-[#64B445] focus:shadow-sm"
+                  />
+
+                  {testoCollaboratore &&
+                    suggerimentiProfessionisti.length > 0 && (
+                      <div className="absolute z-40 mt-1 w-full overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg">
+                        {suggerimentiProfessionisti.map((professionista) => (
+                          <button
+                            key={professionista.id}
+                            type="button"
+                            onClick={() =>
+                              aggiungiCollaboratore(professionista)
+                            }
+                            className="w-full cursor-pointer px-4 py-3 text-left transition hover:bg-[#e8e8e8]"
+                          >
+                            <p className="text-[14px] font-semibold text-[#2B2F5E]">
+                              {getNomeProfessionista(professionista)}
+                            </p>
+                            <p className="text-[12px] text-[#D79D06]">
+                              {professionista.professione ||
+                                "Professione non indicata"}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                </div>
+
+                {mostraAggiungiRubrica && (
+                  <button
+                    type="button"
+                    onClick={aggiungiProfessionistaAllaRubrica}
+                    className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-md bg-[#64B445] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[#5AA03E]"
+                  >
+                    <AppIcon name="plus" size={16} />
+                    Aggiungi alla rubrica
+                  </button>
+                )}
+              </div>
 
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium mb-2 text-[#2B2F5E]">
@@ -605,26 +840,6 @@ function Campo({
         onChange={(e) => onChange(e.target.value)}
         className="w-full border border-gray-300 rounded-md px-4 py-3 bg-transparent outline-none transition focus:bg-white focus:border-[#64B445] focus:shadow-sm"
       />
-    </div>
-  );
-}
-
-function CampoImporto({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div>
-      <label className="block text-sm font-medium mb-2 text-[#2B2F5E]">
-        {label}
-      </label>
-
-      <ImportoInput value={value} onChange={onChange} />
     </div>
   );
 }

@@ -42,6 +42,7 @@ type Commessa = {
   url: string | null;
   data_inizio: string | null;
   data_fine: string | null;
+  lavoro_privato_non_fidepa: boolean;
 };
 
 type CommessaElenco = {
@@ -454,6 +455,9 @@ export default function DettaglioCommessaPage() {
             : null,
         data_inizio: commessa.data_inizio || null,
         data_fine: dataFine,
+        lavoro_privato_non_fidepa: Boolean(
+          commessa.lavoro_privato_non_fidepa
+        ),
       })
       .eq("id", commessa.id);
 
@@ -1201,6 +1205,35 @@ export default function DettaglioCommessaPage() {
 
             </Card>
           </div>
+
+          <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-sm border border-[#D79D06]/35 bg-[#FFF8E7] p-4 shadow-sm">
+            <input
+              type="checkbox"
+              checked={Boolean(commessa.lavoro_privato_non_fidepa)}
+              onChange={(event) =>
+                setCommessa((corrente) =>
+                  corrente
+                    ? {
+                        ...corrente,
+                        lavoro_privato_non_fidepa: event.target.checked,
+                      }
+                    : corrente
+                )
+              }
+              className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer accent-[#D79D06]"
+            />
+
+            <span>
+              <span className="block text-[14px] font-semibold uppercase tracking-[0.04em] text-[#2B2F5E]">
+                Lavoro privato non FIDEPA
+              </span>
+              <span className="mt-1 block text-[13px] leading-relaxed text-gray-600">
+                Esclude la commessa dalla dashboard, dalla scheda riunione e
+                dalla gestione economica. La scheda resterà visibile soltanto
+                nella pagina Commesse.
+              </span>
+            </span>
+          </label>
         </div>
       </div>
 

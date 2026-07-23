@@ -211,11 +211,6 @@ export default function EconomiaCommessePage() {
   const [errore, setErrore] = useState("");
 
   useEffect(() => {
-    caricaDati();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [anno]);
-
-  useEffect(() => {
     window.localStorage.setItem("economia_commesse_anno", String(anno));
   }, [anno]);
 
@@ -227,6 +222,7 @@ export default function EconomiaCommessePage() {
       supabase
         .from("commesse")
         .select("id, titolo, codice, cliente_nome, data_inizio, data_fine, created_at")
+        .eq("lavoro_privato_non_fidepa", false)
         .order("codice", { ascending: false, nullsFirst: false }),
       supabase
         .from("personale")
@@ -235,7 +231,8 @@ export default function EconomiaCommessePage() {
         .order("nome", { ascending: true }),
       supabase
         .from("economia_commesse")
-        .select("*")
+        .select("*, commesse!inner(lavoro_privato_non_fidepa)")
+        .eq("commesse.lavoro_privato_non_fidepa", false)
         .order("anno", { ascending: false })
         .order("created_at", { ascending: false }),
     ]);
@@ -351,6 +348,16 @@ export default function EconomiaCommessePage() {
       resetScheda();
     }
   }
+
+  useEffect(() => {
+    async function caricaDatiAnno() {
+      await caricaDati();
+    }
+
+    void caricaDatiAnno();
+    // Il cambio anno deve ricaricare la scheda economica selezionata.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anno]);
 
   function resetScheda() {
     setCommessaSelezionata(null);
@@ -516,6 +523,8 @@ export default function EconomiaCommessePage() {
   const risultato = compensoNumero - totaleCollaboratori - totaleCostiProgetto;
 
   useEffect(() => {
+    // Il ricalcolo sincronizza importi e percentuali già presenti nel form.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCollaboratori((correnti) =>
       correnti.map((item) => {
         const importo = parseImporto(item.compenso);

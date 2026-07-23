@@ -94,7 +94,6 @@ export default function AppSidebar({
     // Il consiglio viene caricato dal database dopo il primo rendering.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     caricaConsiglioCasuale();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     caricaRuolo();
   }, []);
 
@@ -291,7 +290,7 @@ export default function AppSidebar({
           )}
 
           <div className="px-1 text-[11px] text-[#2B2F5E]/55">
-            Versione 2.3.0 - Creato da Antonio Carbone
+            Versione 2.3.1 - Creato da Antonio Carbone
           </div>
         </div>
       </aside>

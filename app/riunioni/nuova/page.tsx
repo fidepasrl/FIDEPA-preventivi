@@ -89,6 +89,7 @@ export default function NuovaRiunionePage() {
     const { data, error } = await supabase
       .from("commesse")
       .select("id, titolo, codice, priorita, tipo_commessa")
+      .eq("lavoro_privato_non_fidepa", false)
       .order("created_at", { ascending: false });
 
     if (error) {

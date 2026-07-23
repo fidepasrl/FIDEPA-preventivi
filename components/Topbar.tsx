@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import AppIcon from "@/components/AppIcon";
+import AppIcon, { type AppIconName } from "@/components/AppIcon";
 import { isDeveloperRole, normalizeRole, roleLabel } from "@/lib/roles";
 import { supabase } from "@/lib/supabase";
 
@@ -14,6 +14,33 @@ type SearchItem = {
   href: string;
   tipo: "Commessa" | "Attivita" | "Riunione";
 };
+
+const COLLEGAMENTI_FIDEPA: {
+  nome: string;
+  href: string;
+  icona: AppIconName;
+}[] = [
+  {
+    nome: "Sito FIDEPA",
+    href: "https://fidepa.it/",
+    icona: "globe",
+  },
+  {
+    nome: "Instagram FIDEPA",
+    href: "https://www.instagram.com/fidepaing/",
+    icona: "instagram",
+  },
+  {
+    nome: "Facebook FIDEPA",
+    href: "https://www.facebook.com/profile.php?id=61572914417509",
+    icona: "facebook",
+  },
+  {
+    nome: "LinkedIn FIDEPA",
+    href: "https://www.linkedin.com/company/fidepa-ingegneri-associati",
+    icona: "linkedin",
+  },
+];
 
 export default function Topbar({
   onToggleSidebar,
@@ -258,6 +285,25 @@ export default function Topbar({
           <span className="hidden xl:block mr-2 text-[12px] font-medium text-white/85 capitalize">
             {today}
           </span>
+
+          <nav
+            aria-label="Sito e social FIDEPA"
+            className="hidden sm:flex items-center gap-1 border-l border-white/25 pl-2"
+          >
+            {COLLEGAMENTI_FIDEPA.map((collegamento) => (
+              <a
+                key={collegamento.nome}
+                href={collegamento.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex h-9 w-9 items-center justify-center rounded-xl text-white/85 transition hover:bg-white/15 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                title={collegamento.nome}
+                aria-label={`Apri ${collegamento.nome}`}
+              >
+                <AppIcon name={collegamento.icona} size={17} />
+              </a>
+            ))}
+          </nav>
 
           <div className="relative">
             <button
