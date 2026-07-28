@@ -75,6 +75,15 @@ export type PersonaEconomica = {
   economia_iva_aliquota: MoneyValue;
 };
 
+export type ProfessionistaEconomico = {
+  id: string;
+  nome: string | null;
+  cognome: string | null;
+  professione: string | null;
+  partita_iva: string | null;
+  pec: string | null;
+};
+
 export type PreventivoEconomico = {
   numero: string;
   cliente: string | null;
@@ -197,6 +206,7 @@ export type CollaboratoreAssegnato = {
   id: string;
   economia_commessa_id: string;
   persona_id: string | null;
+  professionista_id: string | null;
   collaboratore_esterno_nome: string | null;
   tipo: "personale" | "esterno";
   compenso: MoneyValue;

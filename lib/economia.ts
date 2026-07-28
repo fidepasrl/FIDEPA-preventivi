@@ -4,13 +4,21 @@ export type FrequenzaCostoSocieta = "Mensile" | "Annuale" | "Una tantum";
 
 export type CostoSocietaCalcolabile = {
   importo: number | string | null;
+  categoria?: string | null;
+  persona_id?: string | null;
   cassa?: number | string | null;
   iva?: number | string | null;
+  cassa_aliquota?: number | string | null;
+  iva_aliquota?: number | string | null;
   frequenza: FrequenzaCostoSocieta | string;
   data_riferimento?: string | null;
   data_inizio?: string | null;
   data_fine?: string | null;
   numero_mesi?: number | string | null;
+  variazioni?: Array<{
+    data_decorrenza: string;
+    importo: number | string | null;
+  }>;
   attivo?: boolean | null;
 };
 
@@ -20,6 +28,25 @@ export type MovimentoCostoSocietaMaturato = {
   cassa: number;
   iva: number;
 };
+
+function costoCollaboratore(costo: CostoSocietaCalcolabile) {
+  return costo.categoria?.trim().toLocaleLowerCase("it-IT") === "collaboratori";
+}
+
+function costoStudio(costo: CostoSocietaCalcolabile) {
+  return costo.categoria?.trim().toLocaleLowerCase("it-IT") === "studio";
+}
+
+function costoContinuativo(costo: CostoSocietaCalcolabile) {
+  return (
+    costo.frequenza === "Mensile" &&
+    (costoStudio(costo) || costoCollaboratore(costo))
+  );
+}
+
+function arrotondaImporto(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
 
 function dataLocaleIso(data: Date) {
   const anno = data.getFullYear();
@@ -32,26 +59,127 @@ function primoGiornoDelMese(data: Date) {
   return new Date(data.getFullYear(), data.getMonth(), 1);
 }
 
+function dataRicorrenzaMensile(anno: number, mese: number, giorno: number) {
+  const ultimoGiornoDelMese = new Date(anno, mese + 1, 0).getDate();
+  return new Date(anno, mese, Math.min(giorno, ultimoGiornoDelMese));
+}
+
+function ricorrenzeCostoContinuativo(
+  costo: CostoSocietaCalcolabile,
+  limiteMassimo: Date
+) {
+  const inizio = leggiData(costo.data_inizio);
+  if (!inizio) return [];
+
+  const fineConfigurata = leggiData(costo.data_fine);
+  const fine =
+    fineConfigurata && fineConfigurata < limiteMassimo
+      ? fineConfigurata
+      : limiteMassimo;
+  if (fine < inizio) return [];
+
+  const ricorrenze: Date[] = [];
+  const giornoRicorrenza = inizio.getDate();
+  let anno = inizio.getFullYear();
+  let mese = inizio.getMonth();
+
+  while (true) {
+    const data = dataRicorrenzaMensile(anno, mese, giornoRicorrenza);
+    if (data > fine) break;
+    if (data >= inizio) ricorrenze.push(data);
+
+    mese += 1;
+    if (mese > 11) {
+      mese = 0;
+      anno += 1;
+    }
+  }
+
+  return ricorrenze;
+}
+
+function numeroRicorrenzeStudio(
+  costo: CostoSocietaCalcolabile,
+  anno: number,
+  fineMassima = new Date(anno, 11, 31)
+) {
+  const fineAnno = new Date(anno, 11, 31);
+  const limite = fineMassima < fineAnno ? fineMassima : fineAnno;
+  return ricorrenzeCostoContinuativo(costo, limite).filter(
+    (data) => data.getFullYear() === anno
+  ).length;
+}
+
+function importoCostoAllaData(costo: CostoSocietaCalcolabile, data: Date) {
+  const dataIso = dataLocaleIso(data);
+  const variazioni = [...(costo.variazioni || [])]
+    .filter(
+      (variazione) =>
+        Boolean(variazione.data_decorrenza) &&
+        variazione.data_decorrenza <= dataIso &&
+        parseImporto(variazione.importo) > 0
+    )
+    .sort((a, b) => a.data_decorrenza.localeCompare(b.data_decorrenza));
+
+  return variazioni.length > 0
+    ? parseImporto(variazioni[variazioni.length - 1].importo)
+    : parseImporto(costo.importo);
+}
+
+function importiCostoAllaData(costo: CostoSocietaCalcolabile, data: Date) {
+  const importoBase = parseImporto(costo.importo);
+  const cassaBase = costoCollaboratore(costo) ? parseImporto(costo.cassa) : 0;
+  const ivaBase = parseImporto(costo.iva);
+  const haCassaAliquotaEsplicita =
+    costo.cassa_aliquota !== undefined && costo.cassa_aliquota !== null;
+  const haIvaAliquotaEsplicita =
+    costo.iva_aliquota !== undefined && costo.iva_aliquota !== null;
+  const cassaAliquota = costoCollaboratore(costo)
+    ? haCassaAliquotaEsplicita
+      ? parseImporto(costo.cassa_aliquota)
+      : importoBase > 0
+        ? (cassaBase / importoBase) * 100
+        : 0
+    : 0;
+  const ivaAliquota = haIvaAliquotaEsplicita
+    ? parseImporto(costo.iva_aliquota)
+    : importoBase + cassaBase > 0
+      ? (ivaBase / (importoBase + cassaBase)) * 100
+      : 0;
+  const importo = costoContinuativo(costo)
+    ? importoCostoAllaData(costo, data)
+    : importoBase;
+  const cassa = costoCollaboratore(costo)
+    ? arrotondaImporto((importo * cassaAliquota) / 100)
+    : 0;
+  const iva = arrotondaImporto(((importo + cassa) * ivaAliquota) / 100);
+
+  return { importo, cassa, iva };
+}
+
 export function movimentiCostoSocietaMaturati(
   costo: CostoSocietaCalcolabile,
   oggi = new Date()
 ): MovimentoCostoSocietaMaturato[] {
   if (costo.attivo === false) return [];
 
-  const importi = {
-    importo: parseImporto(costo.importo),
-    cassa: parseImporto(costo.cassa),
-    iva: parseImporto(costo.iva),
-  };
   const limite = new Date(oggi.getFullYear(), oggi.getMonth(), oggi.getDate());
   const risultato: MovimentoCostoSocietaMaturato[] = [];
   const aggiungi = (data: Date) => {
     if (data <= limite) {
-      risultato.push({ dataPagamento: dataLocaleIso(data), ...importi });
+      risultato.push({
+        dataPagamento: dataLocaleIso(data),
+        ...importiCostoAllaData(costo, data),
+      });
     }
   };
 
   if (costo.frequenza === "Mensile") {
+    if (costoContinuativo(costo)) {
+      ricorrenzeCostoContinuativo(costo, limite).forEach(aggiungi);
+      return risultato;
+    }
+
     const dataInizio = leggiData(costo.data_inizio);
     if (!dataInizio) return [];
     const inizio = primoGiornoDelMese(dataInizio);
@@ -86,7 +214,7 @@ export function movimentiCostoSocietaMaturati(
   if (riferimento && riferimento <= limite) {
     risultato.push({
       dataPagamento: dataLocaleIso(riferimento),
-      ...importi,
+      ...importiCostoAllaData(costo, riferimento),
     });
   }
   return risultato;
@@ -95,17 +223,30 @@ export function movimentiCostoSocietaMaturati(
 export function totaleCostoSocieta(costo: CostoSocietaCalcolabile) {
   return (
     parseImporto(costo.importo) +
-    parseImporto(costo.cassa) +
+    (costoCollaboratore(costo) ? parseImporto(costo.cassa) : 0) +
     parseImporto(costo.iva)
   );
 }
 
 export function totaleCostoSocietaSenzaIva(costo: CostoSocietaCalcolabile) {
-  return parseImporto(costo.importo) + parseImporto(costo.cassa);
+  return (
+    parseImporto(costo.importo) +
+    (costoCollaboratore(costo) ? parseImporto(costo.cassa) : 0)
+  );
 }
 
 export function totaleCostoSocietaNetto(costo: CostoSocietaCalcolabile) {
   return parseImporto(costo.importo);
+}
+
+function movimentiContinuativiAnno(
+  costo: CostoSocietaCalcolabile,
+  anno: number,
+  limite = new Date(anno, 11, 31)
+) {
+  return movimentiCostoSocietaMaturati(costo, limite).filter((movimento) =>
+    movimento.dataPagamento.startsWith(`${anno}-`)
+  );
 }
 
 export function costoSocietaAnnuale(
@@ -113,6 +254,13 @@ export function costoSocietaAnnuale(
   anno: number
 ) {
   if (costo.attivo === false) return 0;
+  if (costoContinuativo(costo)) {
+    return movimentiContinuativiAnno(costo, anno).reduce(
+      (totale, movimento) =>
+        totale + movimento.importo + movimento.cassa + movimento.iva,
+      0
+    );
+  }
 
   return costoSocietaAnnualeDaImporto(costo, anno, totaleCostoSocieta(costo));
 }
@@ -122,6 +270,12 @@ export function costoSocietaAnnualeSenzaIva(
   anno: number
 ) {
   if (costo.attivo === false) return 0;
+  if (costoContinuativo(costo)) {
+    return movimentiContinuativiAnno(costo, anno).reduce(
+      (totale, movimento) => totale + movimento.importo + movimento.cassa,
+      0
+    );
+  }
 
   return costoSocietaAnnualeDaImporto(
     costo,
@@ -135,6 +289,12 @@ export function costoSocietaAnnualeNetto(
   anno: number
 ) {
   if (costo.attivo === false) return 0;
+  if (costoContinuativo(costo)) {
+    return movimentiContinuativiAnno(costo, anno).reduce(
+      (totale, movimento) => totale + movimento.importo,
+      0
+    );
+  }
 
   return costoSocietaAnnualeDaImporto(costo, anno, totaleCostoSocietaNetto(costo));
 }
@@ -145,6 +305,9 @@ function costoSocietaAnnualeDaImporto(
   importo: number
 ) {
   if (costo.frequenza === "Mensile") {
+    if (costoStudio(costo)) {
+      return importo * numeroRicorrenzeStudio(costo, anno);
+    }
     return importo * mesiCostoMensile(costo, anno);
   }
 
@@ -163,6 +326,13 @@ export function costoSocietaMaturato(
   oggi = new Date()
 ) {
   if (costo.attivo === false) return 0;
+  if (costoContinuativo(costo)) {
+    return movimentiContinuativiAnno(costo, anno, oggi).reduce(
+      (totale, movimento) =>
+        totale + movimento.importo + movimento.cassa + movimento.iva,
+      0
+    );
+  }
 
   return costoSocietaMaturatoDaImporto(
     costo,
@@ -178,6 +348,12 @@ export function costoSocietaMaturatoSenzaIva(
   oggi = new Date()
 ) {
   if (costo.attivo === false) return 0;
+  if (costoContinuativo(costo)) {
+    return movimentiContinuativiAnno(costo, anno, oggi).reduce(
+      (totale, movimento) => totale + movimento.importo + movimento.cassa,
+      0
+    );
+  }
 
   return costoSocietaMaturatoDaImporto(
     costo,
@@ -193,6 +369,12 @@ export function costoSocietaMaturatoNetto(
   oggi = new Date()
 ) {
   if (costo.attivo === false) return 0;
+  if (costoContinuativo(costo)) {
+    return movimentiContinuativiAnno(costo, anno, oggi).reduce(
+      (totale, movimento) => totale + movimento.importo,
+      0
+    );
+  }
 
   return costoSocietaMaturatoDaImporto(
     costo,
@@ -218,6 +400,9 @@ function costoSocietaMaturatoDaImporto(
   if (!fineMaturazione) return 0;
 
   if (costo.frequenza === "Mensile") {
+    if (costoStudio(costo)) {
+      return importo * numeroRicorrenzeStudio(costo, anno, fineMaturazione);
+    }
     return importo * mesiCostoMensile(costo, anno, fineMaturazione);
   }
 
@@ -253,10 +438,20 @@ function quotaAccessorioSocieta(
   campo: "cassa" | "iva"
 ) {
   if (costo.attivo === false) return 0;
+  if (campo === "cassa" && !costoCollaboratore(costo)) return 0;
+  if (costoContinuativo(costo)) {
+    return movimentiContinuativiAnno(costo, anno).reduce(
+      (totale, movimento) => totale + movimento[campo],
+      0
+    );
+  }
 
   const importo = parseImporto(costo[campo]);
 
   if (costo.frequenza === "Mensile") {
+    if (costoStudio(costo)) {
+      return importo * numeroRicorrenzeStudio(costo, anno);
+    }
     return importo * mesiCostoMensile(costo, anno);
   }
 
@@ -280,6 +475,16 @@ export function meseDaData(value: string | null | undefined) {
 
 function leggiData(value: string | null | undefined) {
   if (!value) return null;
+
+  const dataIso = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dataIso) {
+    const dataLocale = new Date(
+      Number(dataIso[1]),
+      Number(dataIso[2]) - 1,
+      Number(dataIso[3])
+    );
+    return Number.isNaN(dataLocale.getTime()) ? null : dataLocale;
+  }
 
   const data = new Date(value);
   return Number.isNaN(data.getTime()) ? null : data;

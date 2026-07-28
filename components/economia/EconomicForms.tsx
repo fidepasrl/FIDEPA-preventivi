@@ -21,6 +21,7 @@ import type {
   ModalitaCalcoloCollaboratore,
   MovimentoFinanziario,
   PersonaEconomica,
+  ProfessionistaEconomico,
   ProfiloFiscale,
   RigaDocumentoAttivo,
   SoggettoFiscale,
@@ -637,6 +638,7 @@ export function ActiveDocumentModal({
 export function CollaboratorModal({
   economiaId,
   personale,
+  professionisti,
   profili,
   collaboratore,
   valoreCommessa,
@@ -646,6 +648,7 @@ export function CollaboratorModal({
 }: {
   economiaId: string;
   personale: PersonaEconomica[];
+  professionisti: ProfessionistaEconomico[];
   profili: ProfiloFiscale[];
   collaboratore?: CollaboratoreAssegnato | null;
   valoreCommessa: number;
@@ -662,28 +665,45 @@ export function CollaboratorModal({
     : "importo_fisso";
   const [tipo, setTipo] = useState<"personale" | "esterno">(collaboratore?.tipo || "personale");
   const [personaId, setPersonaId] = useState(collaboratore?.persona_id || personale[0]?.id || "");
-  const [nomeEsterno, setNomeEsterno] = useState(collaboratore?.collaboratore_esterno_nome || "");
+  const professionistaIniziale = collaboratore?.professionista_id || professionisti.find((item) => {
+    const nomeCompleto = `${item.cognome || ""} ${item.nome || ""}`.trim();
+    return nomeCompleto === collaboratore?.collaboratore_esterno_nome;
+  })?.id || "";
+  const [professionistaId, setProfessionistaId] = useState(professionistaIniziale);
   const [modalita, setModalita] = useState<ModalitaCalcoloCollaboratore>(modalitaIniziale);
   const [compenso, setCompenso] = useState(finalizzaInputImporto(collaboratore?.compenso || ""));
   const [percentuale, setPercentuale] = useState(String(parseImporto(collaboratore?.percentuale || 0) || ""));
-  const profiloDefault = profili.find((item) => item.codice === (tipo === "personale" ? "personale_interno" : "professionista_cassa_iva"));
-  const [profiloId, setProfiloId] = useState(collaboratore?.profilo_fiscale_id || profiloDefault?.id || "");
+  const cassaSalvata = parseImporto(collaboratore?.cassa_aliquota);
+  const ivaSalvata = parseImporto(collaboratore?.iva_aliquota);
+  const [cassaAttiva, setCassaAttiva] = useState(
+    collaboratore ? cassaSalvata > 0 : true
+  );
+  const [ivaAttiva, setIvaAttiva] = useState(
+    collaboratore ? ivaSalvata > 0 : true
+  );
+  const [cassaPercentuale, setCassaPercentuale] = useState(
+    String(cassaSalvata || 4)
+  );
+  const [ivaPercentuale, setIvaPercentuale] = useState(
+    String(ivaSalvata || 22)
+  );
   const [note, setNote] = useState(collaboratore?.note || "");
   const [errore, setErrore] = useState("");
   const [salvataggio, setSalvataggio] = useState(false);
   const compensoCalcolato = calcolaCompensoCollaboratore({ modalita, importo: compenso, percentuale, valoreCommessa, quotaFidepa });
   const personaSelezionata = personale.find((item) => item.id === personaId);
+  const professionistaSelezionato = professionisti.find(
+    (item) => item.id === professionistaId
+  );
   const profiloPersonale = profili.find((item) => item.codice === "personale_interno");
 
   function cambiaTipo(value: "personale" | "esterno") {
     setTipo(value);
-    const profilo = profili.find((item) => item.codice === (value === "personale" ? "personale_interno" : "professionista_cassa_iva"));
-    if (profilo) setProfiloId(profilo.id);
   }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if ((tipo === "personale" && !personaId) || (tipo === "esterno" && !nomeEsterno.trim())) {
+    if ((tipo === "personale" && !personaId) || (tipo === "esterno" && !professionistaId)) {
       setErrore("Indica il collaboratore.");
       return;
     }
@@ -691,28 +711,33 @@ export function CollaboratorModal({
       setErrore("Il compenso concordato deve essere maggiore di zero.");
       return;
     }
-    if (tipo === "esterno" && !profiloId) {
-      setErrore("Seleziona il profilo fiscale del collaboratore.");
+    const cassaEsterna = cassaAttiva ? parseImporto(cassaPercentuale) : 0;
+    const ivaEsterna = ivaAttiva ? parseImporto(ivaPercentuale) : 0;
+    if (
+      tipo === "esterno" &&
+      (cassaEsterna < 0 ||
+        cassaEsterna > 100 ||
+        ivaEsterna < 0 ||
+        ivaEsterna > 100)
+    ) {
+      setErrore("Le aliquote di Cassa e IVA devono essere comprese tra 0 e 100%.");
       return;
     }
-    const profilo = tipo === "personale"
-      ? profiloPersonale
-      : profili.find((item) => item.id === profiloId);
     const cassaAliquota = tipo === "personale" && personaSelezionata?.economia_cassa_attiva
       ? parseImporto(personaSelezionata.economia_cassa_aliquota)
-      : parseImporto(profilo?.cassa_aliquota);
+      : tipo === "esterno" ? cassaEsterna : 0;
     const ivaAliquota = tipo === "personale" && personaSelezionata?.economia_iva_attiva
       ? parseImporto(personaSelezionata.economia_iva_aliquota)
-      : parseImporto(profilo?.iva_aliquota);
+      : tipo === "esterno" ? ivaEsterna : 0;
     const fiscale = calcolaRigaFiscale({
       imponibile: compensoCalcolato,
       cassaAliquota,
       ivaAliquota,
-      ritenutaAliquota: profilo?.ritenuta_aliquota || 0,
-      bollo: profilo?.bollo || 0,
-      cassaBase: tipo === "personale" ? (cassaAliquota > 0 ? "imponibile" : "nessuna") : profilo?.cassa_base,
-      ivaBase: tipo === "personale" ? (ivaAliquota > 0 ? "imponibile_cassa" : "nessuna") : profilo?.iva_base,
-      ritenutaBase: tipo === "personale" ? "nessuna" : profilo?.ritenuta_base,
+      ritenutaAliquota: 0,
+      bollo: 0,
+      cassaBase: cassaAliquota > 0 ? "imponibile" : "nessuna",
+      ivaBase: ivaAliquota > 0 ? "imponibile_cassa" : "nessuna",
+      ritenutaBase: "nessuna",
     });
     setSalvataggio(true);
     try {
@@ -720,12 +745,15 @@ export function CollaboratorModal({
         id: collaboratore?.id || "",
         economia_commessa_id: economiaId,
         persona_id: tipo === "personale" ? personaId : null,
-        collaboratore_esterno_nome: tipo === "esterno" ? nomeEsterno.trim() : null,
+        professionista_id: tipo === "esterno" ? professionistaId : null,
+        collaboratore_esterno_nome: tipo === "esterno"
+          ? `${professionistaSelezionato?.cognome || ""} ${professionistaSelezionato?.nome || ""}`.trim()
+          : null,
         tipo,
         compenso: compensoCalcolato,
         percentuale: parseImporto(percentuale),
         modalita_calcolo: modalita,
-        profilo_fiscale_id: tipo === "personale" ? profiloPersonale?.id || null : profiloId,
+        profilo_fiscale_id: tipo === "personale" ? profiloPersonale?.id || null : null,
         cassa_aliquota: cassaAliquota,
         iva_aliquota: ivaAliquota,
         cassa: fiscale.cassa,
@@ -753,7 +781,22 @@ export function CollaboratorModal({
           {tipo === "personale" ? (
             <Field label="Nominativo"><select value={personaId} onChange={(e) => setPersonaId(e.target.value)} className={inputClass}>{personale.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></Field>
           ) : (
-            <Field label="Nominativo"><input value={nomeEsterno} onChange={(e) => setNomeEsterno(e.target.value)} className={inputClass} required /></Field>
+            <Field label="Professionista dalla rubrica">
+              {professionisti.length ? (
+                <select value={professionistaId} onChange={(e) => setProfessionistaId(e.target.value)} className={inputClass} required>
+                  <option value="">Seleziona professionista</option>
+                  {professionisti.map((item) => {
+                    const nome = `${item.cognome || ""} ${item.nome || ""}`.trim() || "Professionista senza nome";
+                    return <option key={item.id} value={item.id}>{nome}{item.professione ? ` · ${item.professione}` : ""}</option>;
+                  })}
+                </select>
+              ) : (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+                  Nessun professionista disponibile. <a href="/rubrica/professionisti" className="font-semibold underline">Apri la rubrica professionisti</a>.
+                </div>
+              )}
+              {!professionistaId && collaboratore?.collaboratore_esterno_nome ? <p className="mt-1.5 text-xs text-gray-500">Collaboratore storico: {collaboratore.collaboratore_esterno_nome}. Selezionalo dalla rubrica per collegarlo.</p> : null}
+            </Field>
           )}
           <Field label="Modalità di calcolo">
             <select value={modalita} onChange={(e) => setModalita(e.target.value as ModalitaCalcoloCollaboratore)} className={inputClass}>
@@ -768,14 +811,30 @@ export function CollaboratorModal({
             <Field label="Compenso concordato"><ImportoInput value={compenso} onChange={setCompenso} /></Field>
           )}
           {tipo === "esterno" ? (
-            <Field label="Profilo fiscale">
-              <select value={profiloId} onChange={(e) => setProfiloId(e.target.value)} className={inputClass} required>
-                <option value="">Seleziona profilo</option>{profili.filter((item) => item.codice !== "personale_interno").map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}
-              </select>
-            </Field>
+            <div className="space-y-3 rounded-xl border border-[#2B2F5E]/10 bg-[#F8F9FB] p-4 sm:col-span-2">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Impostazioni fiscali</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="flex items-center gap-3 rounded-xl bg-white p-3 text-sm font-semibold text-[#2B2F5E]">
+                  <input type="checkbox" checked={cassaAttiva} onChange={(event) => setCassaAttiva(event.target.checked)} className="h-4 w-4 accent-[#64B445]" />
+                  <span className="flex-1">Cassa</span>
+                  <input type="number" min="0" max="100" step="0.01" value={cassaPercentuale} onChange={(event) => setCassaPercentuale(event.target.value)} disabled={!cassaAttiva} aria-label="Aliquota Cassa" className="w-24 rounded-lg border border-gray-200 px-2 py-1.5 text-right disabled:bg-gray-100 disabled:text-gray-400" />
+                  <span>%</span>
+                </label>
+                <label className="flex items-center gap-3 rounded-xl bg-white p-3 text-sm font-semibold text-[#2B2F5E]">
+                  <input type="checkbox" checked={ivaAttiva} onChange={(event) => setIvaAttiva(event.target.checked)} className="h-4 w-4 accent-[#64B445]" />
+                  <span className="flex-1">IVA</span>
+                  <input type="number" min="0" max="100" step="0.01" value={ivaPercentuale} onChange={(event) => setIvaPercentuale(event.target.value)} disabled={!ivaAttiva} aria-label="Aliquota IVA" className="w-24 rounded-lg border border-gray-200 px-2 py-1.5 text-right disabled:bg-gray-100 disabled:text-gray-400" />
+                  <span>%</span>
+                </label>
+              </div>
+              <p className="text-xs text-gray-500">Valori iniziali: Cassa 4% e IVA 22%. Puoi disattivarli o modificare le aliquote.</p>
+            </div>
           ) : (
             <div className="rounded-xl bg-[#E8F2FA] px-4 py-3"><p className="text-[10px] font-bold uppercase text-[#2D80B3]">Dati fiscali del personale</p><p className="mt-1 text-sm font-semibold text-[#2B2F5E]">Cassa {personaSelezionata?.economia_cassa_attiva ? `${parseImporto(personaSelezionata.economia_cassa_aliquota)}%` : "non prevista"} · IVA {personaSelezionata?.economia_iva_attiva ? `${parseImporto(personaSelezionata.economia_iva_aliquota)}%` : "non prevista"}</p></div>
           )}
+          {tipo === "esterno" && professionistaSelezionato ? (
+            <div className="rounded-xl bg-[#E8F2FA] px-4 py-3"><p className="text-[10px] font-bold uppercase text-[#2D80B3]">Dati dalla rubrica</p><p className="mt-1 text-sm font-semibold text-[#2B2F5E]">{professionistaSelezionato.professione || "Professione non indicata"}</p><p className="mt-1 text-xs text-gray-500">{professionistaSelezionato.partita_iva || "Partita IVA non indicata"}{professionistaSelezionato.pec ? ` · ${professionistaSelezionato.pec}` : ""}</p></div>
+          ) : null}
           <div className="rounded-xl bg-[#F2F2F2] px-4 py-3"><p className="text-[10px] font-bold uppercase text-gray-400">Compenso calcolato</p><p className="mt-1 text-lg font-semibold text-[#2B2F5E]">{formattaEuro(compensoCalcolato)}</p></div>
         </div>
         <Field label="Note"><textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} className={inputClass} /></Field>
@@ -791,7 +850,6 @@ export function CollaboratorPaymentModal({
   collaboratore,
   nomeCollaboratore,
   persona,
-  profili,
   onClose,
   onSave,
 }: {
@@ -799,7 +857,6 @@ export function CollaboratorPaymentModal({
   collaboratore: CollaboratoreAssegnato;
   nomeCollaboratore: string;
   persona?: PersonaEconomica | null;
-  profili: ProfiloFiscale[];
   onClose: () => void;
   onSave: (
     documento: Omit<DocumentoCollaboratore, "created_at" | "updated_at" | "deleted_at">,
@@ -816,14 +873,12 @@ export function CollaboratorPaymentModal({
   const [salvataggio, setSalvataggio] = useState(false);
 
   const personaleInterno = collaboratore.tipo === "personale";
-  const profilo = profili.find((item) => item.id === collaboratore.profilo_fiscale_id);
   const { cassaAliquota, ivaAliquota } = aliquotePagamentoCollaboratore({
     tipo: collaboratore.tipo,
     conFattura: tipoPagamento === "fattura",
     cassaSalvata: collaboratore.cassa_aliquota,
     ivaSalvata: collaboratore.iva_aliquota,
     persona,
-    profilo,
   });
   const fiscale = calcolaRigaFiscale({
     imponibile: importo,
@@ -846,11 +901,6 @@ export function CollaboratorPaymentModal({
       setErrore("La causale è obbligatoria.");
       return;
     }
-    if (tipoPagamento === "fattura" && !personaleInterno && !profilo) {
-      setErrore("Configura il profilo fiscale del collaboratore prima di registrare una fattura.");
-      return;
-    }
-
     setSalvataggio(true);
     setErrore("");
     try {
@@ -872,7 +922,10 @@ export function CollaboratorPaymentModal({
           bollo: 0,
           totale: fiscale.totale,
           stato: "emesso",
-          profilo_fiscale_id: tipoPagamento === "fattura" ? collaboratore.profilo_fiscale_id : null,
+          profilo_fiscale_id:
+            tipoPagamento === "fattura" && personaleInterno
+              ? collaboratore.profilo_fiscale_id
+              : null,
           override_fiscale: false,
           override_fiscale_by: null,
           override_fiscale_at: null,
@@ -940,7 +993,7 @@ export function CollaboratorPaymentModal({
                   ? persona
                     ? "Dati aggiornati dalla pagina Personale"
                     : "Dati fiscali salvati nella commessa"
-                  : profilo?.nome || "Profilo non configurato"}
+                  : "Aliquote salvate sul collaboratore"}
                 {` · Cassa ${cassaAliquota > 0 ? `${cassaAliquota}%` : "non prevista"} · IVA ${ivaAliquota > 0 ? `${ivaAliquota}%` : "non prevista"}`}
               </p>
             </div>

@@ -9,6 +9,7 @@ import type {
   DocumentoCollaboratore,
   MovimentoFinanziario,
   PersonaEconomica,
+  ProfessionistaEconomico,
   PreventivoEconomico,
   ProfiloFiscale,
   RigaDocumentoAttivo,
@@ -117,11 +118,22 @@ export async function caricaIndiceEconomia(anno: number) {
 }
 
 export async function caricaOpzioniEconomia() {
-  const [personaleRes, soggettiRes, profiliRes, preventiviRes] = await Promise.all([
+  const [
+    personaleRes,
+    professionistiRes,
+    soggettiRes,
+    profiliRes,
+    preventiviRes,
+  ] = await Promise.all([
     supabase
       .from("personale")
       .select("id, nome, email, colore, attivo, economia_cassa_attiva, economia_cassa_aliquota, economia_iva_attiva, economia_iva_aliquota")
       .eq("attivo", true)
+      .order("nome"),
+    supabase
+      .from("professionisti")
+      .select("id, nome, cognome, professione, partita_iva, pec")
+      .order("cognome")
       .order("nome"),
     supabase
       .from("economia_soggetti_fiscali")
@@ -142,11 +154,16 @@ export async function caricaOpzioniEconomia() {
       .limit(200),
   ]);
   assicuratiNessunErrore(personaleRes.error, "Caricamento personale");
+  assicuratiNessunErrore(
+    professionistiRes.error,
+    "Caricamento rubrica professionisti"
+  );
   assicuratiNessunErrore(soggettiRes.error, "Caricamento soggetti fiscali");
   assicuratiNessunErrore(profiliRes.error, "Caricamento profili fiscali");
   assicuratiNessunErrore(preventiviRes.error, "Caricamento preventivi");
   return {
     personale: (personaleRes.data || []) as PersonaEconomica[],
+    professionisti: (professionistiRes.data || []) as ProfessionistaEconomico[],
     soggetti: (soggettiRes.data || []) as SoggettoFiscale[],
     profili: (profiliRes.data || []) as ProfiloFiscale[],
     preventivi: (preventiviRes.data || []) as PreventivoEconomico[],

@@ -7,7 +7,6 @@ import type {
   MovimentoFinanziario,
   MoneyValue,
   PersonaEconomica,
-  ProfiloFiscale,
   RigaFiscaleInput,
   RiepilogoEconomico,
   SchedaEconomica,
@@ -72,7 +71,6 @@ export function aliquotePagamentoCollaboratore(input: {
     | "economia_iva_attiva"
     | "economia_iva_aliquota"
   > | null;
-  profilo?: Pick<ProfiloFiscale, "cassa_aliquota" | "iva_aliquota"> | null;
 }) {
   if (!input.conFattura) {
     return { cassaAliquota: 0, ivaAliquota: 0 };
@@ -97,8 +95,8 @@ export function aliquotePagamentoCollaboratore(input: {
   }
 
   return {
-    cassaAliquota: parseImporto(input.profilo?.cassa_aliquota),
-    ivaAliquota: parseImporto(input.profilo?.iva_aliquota),
+    cassaAliquota: parseImporto(input.cassaSalvata),
+    ivaAliquota: parseImporto(input.ivaSalvata),
   };
 }
 

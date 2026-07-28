@@ -5,6 +5,14 @@ import Link from "next/link";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import AppIcon from "@/components/AppIcon";
+import {
+  COLORE_HEX_TIPO_COMMESSA,
+  SIMBOLO_TIPO_COMMESSA,
+  TIPI_COMMESSA,
+  getSimboloTipoCommessa,
+  isTipoCommessa,
+  type TipoCommessa,
+} from "@/lib/tipiCommesse";
 
 type CommessaMappa = {
   id: string;
@@ -13,28 +21,9 @@ type CommessaMappa = {
   latitudine: number | null;
   longitudine: number | null;
   tipo_commessa: string | null;
-  priorita: Priorita | null;
 };
 
-type Priorita = "Urgente" | "Alta" | "Normale" | "Bassa" | "Terminato";
-
-const COLORE_PRIORITA: Record<Priorita, string> = {
-  Urgente: "#d96f4b",
-  Alta: "#d79d06",
-  Normale: "#5e9ad3",
-  Bassa: "#64b445",
-  Terminato: "#BFE3C0",
-};
-
-const PRIORITA_LEGENDA: Priorita[] = [
-  "Urgente",
-  "Alta",
-  "Normale",
-  "Bassa",
-  "Terminato",
-];
-
-function creaMarkerIcon(colore: string) {
+function creaMarkerIcon(colore: string, simbolo: string) {
   return L.divIcon({
     className: "commessa-marker",
     html: `
@@ -51,14 +40,16 @@ function creaMarkerIcon(colore: string) {
       ">
         <span style="
           position: absolute;
-          top: 8px;
-          left: 8px;
-          width: 8px;
-          height: 8px;
-          background: #ffffff;
-          border-radius: 999px;
-          opacity: 0.95;
-        "></span>
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #ffffff;
+          font-size: 13px;
+          font-weight: 700;
+          line-height: 1;
+          transform: rotate(45deg);
+        ">${simbolo}</span>
       </span>
     `,
     iconSize: [28, 40],
@@ -68,14 +59,19 @@ function creaMarkerIcon(colore: string) {
 }
 
 const markerIcons = Object.fromEntries(
-  Object.entries(COLORE_PRIORITA).map(([priorita, colore]) => [
-    priorita,
-    creaMarkerIcon(colore),
+  TIPI_COMMESSA.map((tipo) => [
+    tipo,
+    creaMarkerIcon(
+      COLORE_HEX_TIPO_COMMESSA[tipo],
+      SIMBOLO_TIPO_COMMESSA[tipo]
+    ),
   ])
-) as Record<Priorita, L.DivIcon>;
+) as Record<TipoCommessa, L.DivIcon>;
 
-function getMarkerIcon(priorita: Priorita | null) {
-  return priorita ? markerIcons[priorita] : markerIcons.Normale;
+const markerIconGenerico = creaMarkerIcon("#9CA3AF", "•");
+
+function getMarkerIcon(tipo: string | null) {
+  return isTipoCommessa(tipo) ? markerIcons[tipo] : markerIconGenerico;
 }
 
 const CENTRO_AGRO: [number, number] = [40.745, 14.62];
@@ -178,7 +174,7 @@ export default function DashboardMap({
               Number(commessa.latitudine),
               Number(commessa.longitudine),
             ]}
-            icon={getMarkerIcon(commessa.priorita)}
+            icon={getMarkerIcon(commessa.tipo_commessa)}
           >
             <Popup>
               <Link
@@ -190,6 +186,11 @@ export default function DashboardMap({
                 <span className="block mt-1 text-[13px] text-gray-600">
                   {commessa.posizione || "Posizione non indicata"}
                 </span>
+                <span className="mt-1.5 block text-[12px] font-semibold text-[#2D80B3]">
+                  {isTipoCommessa(commessa.tipo_commessa)
+                    ? `${getSimboloTipoCommessa(commessa.tipo_commessa)} ${commessa.tipo_commessa}`
+                    : "Tipo non indicato"}
+                </span>
               </Link>
             </Popup>
           </Marker>
@@ -198,18 +199,20 @@ export default function DashboardMap({
 
       <div className="pointer-events-none absolute bottom-3 left-3 z-[500] rounded-xl border border-gray-100 bg-white/95 px-3 py-2.5 shadow-md backdrop-blur-sm">
         <p className="mb-1 text-[12px] font-semibold text-[#2B2F5E]">
-          Priorita
+          Tipo commessa
         </p>
 
-        <div className="flex flex-col gap-1">
-          {PRIORITA_LEGENDA.map((priorita) => (
-            <div key={priorita} className="flex items-center gap-2">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+          {TIPI_COMMESSA.map((tipo) => (
+            <div key={tipo} className="flex items-center gap-2">
               <span
-                className="h-3 w-3 rounded-full border border-white shadow-sm"
-                style={{ backgroundColor: COLORE_PRIORITA[priorita] }}
-              />
+                className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-white text-[9px] font-bold text-white shadow-sm"
+                style={{ backgroundColor: COLORE_HEX_TIPO_COMMESSA[tipo] }}
+              >
+                {SIMBOLO_TIPO_COMMESSA[tipo]}
+              </span>
               <span className="text-[12px] leading-none text-[#2B2F5E]">
-                {priorita}
+                {tipo}
               </span>
             </div>
           ))}

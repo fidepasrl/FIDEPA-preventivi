@@ -290,7 +290,7 @@ export default function AppSidebar({
                   <AppIcon name="lightbulb" size={17} />
                 </span>
                 <p className="text-[11px] uppercase tracking-[0.12em] font-bold">
-                  Consiglio
+                  Ricorda
                 </p>
               </div>
               <p className="mt-3 text-[13px] text-[#2B2F5E] leading-relaxed">
@@ -300,7 +300,7 @@ export default function AppSidebar({
           )}
 
           <div className="px-1 text-[11px] text-[#2B2F5E]/55">
-            Versione 2.3.2 - Creato da Antonio Carbone
+            Versione 2.3.3 - Creato da Antonio Carbone
           </div>
         </div>
       </aside>

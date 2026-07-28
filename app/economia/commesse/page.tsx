@@ -36,6 +36,7 @@ import { formattaEuro, parseImporto } from "@/lib/importi";
 import type {
   CommessaEconomica,
   PersonaEconomica,
+  ProfessionistaEconomico,
   PreventivoEconomico,
   ProfiloFiscale,
   RiepilogoEconomico,
@@ -139,6 +140,9 @@ export default function EconomiaCommessePage() {
   const [commesse, setCommesse] = useState<CommessaEconomica[]>([]);
   const [schede, setSchede] = useState<SchedaEconomica[]>([]);
   const [personale, setPersonale] = useState<PersonaEconomica[]>([]);
+  const [professionisti, setProfessionisti] = useState<
+    ProfessionistaEconomico[]
+  >([]);
   const [soggetti, setSoggetti] = useState<SoggettoFiscale[]>([]);
   const [profili, setProfili] = useState<ProfiloFiscale[]>([]);
   const [preventivi, setPreventivi] = useState<PreventivoEconomico[]>([]);
@@ -202,6 +206,7 @@ export default function EconomiaCommessePage() {
         setCommesse(ordinate);
         setSchede(indice.schede);
         setPersonale(opzioni.personale);
+        setProfessionisti(opzioni.professionisti);
         setSoggetti(opzioni.soggetti);
         setProfili(opzioni.profili);
         setPreventivi(opzioni.preventivi);
@@ -470,7 +475,7 @@ export default function EconomiaCommessePage() {
                         {tab === "quadro" ? <OverviewSection key={scheda?.id || `nuova-${commessa.id}`} scheda={scheda} preventivi={preventivi} soggetti={soggetti} variazioni={workspace.variazioni} documenti={workspace.documentiAttivi} riepilogo={riepilogo} onSaveSummary={salvaQuadro} onSaveVariation={salvaVariazioneERicarica} onDeleteVariation={eliminaVariazioneERicarica} /> : null}
                         {!scheda && tab !== "quadro" ? <EconomicCard title="Quadro economico da inizializzare"><EmptyState>Configura e salva prima il quadro economico della commessa.</EmptyState></EconomicCard> : null}
                         {scheda && tab === "documenti" ? <ReceiptsSection scheda={scheda} commessa={commessa} movimenti={workspace.movimenti} onSaveReceipt={salvaIncassoERicarica} onAttachReceipt={allegaDocumentoIncasso} onDeleteReceipt={eliminaIncasso} /> : null}
-                        {scheda && tab === "collaboratori" ? <CollaboratorsCostsSection key={scheda.id} scheda={scheda} personale={personale} profili={profili} collaboratori={workspace.collaboratori} documentiCollaboratori={workspace.documentiCollaboratori} movimenti={workspace.movimenti} allocazioni={workspace.allocazioni} costi={workspace.costiProgetto} valoreCommessa={riepilogo.valoreAggiornato} onSaveRetention={salvaTrattenuta} onSaveCollaborator={salvaCollaboratoreERicarica} onArchiveCollaborator={archiviaCollaboratoreERicarica} onSavePayment={salvaPagamentoCollaboratore} onCancelPayment={annullaPagamentoCollaboratore} onSaveCost={salvaCostoERicarica} onArchiveCost={archiviaCostoERicarica} /> : null}
+                        {scheda && tab === "collaboratori" ? <CollaboratorsCostsSection key={scheda.id} scheda={scheda} personale={personale} professionisti={professionisti} profili={profili} collaboratori={workspace.collaboratori} documentiCollaboratori={workspace.documentiCollaboratori} movimenti={workspace.movimenti} allocazioni={workspace.allocazioni} costi={workspace.costiProgetto} valoreCommessa={riepilogo.valoreAggiornato} onSaveRetention={salvaTrattenuta} onSaveCollaborator={salvaCollaboratoreERicarica} onArchiveCollaborator={archiviaCollaboratoreERicarica} onSavePayment={salvaPagamentoCollaboratore} onCancelPayment={annullaPagamentoCollaboratore} onSaveCost={salvaCostoERicarica} onArchiveCost={archiviaCostoERicarica} /> : null}
                         {scheda && tab === "riepilogo" ? <EconomicDashboard riepilogo={riepilogo} /> : null}
                       </div>
                     )}

@@ -60,6 +60,18 @@ export const COLORE_BG_TIPO_COMMESSA: Record<TipoCommessa, string> = {
   "Diagnosi Energetica": "bg-[#4D9635]",
 };
 
+export const COLORE_HEX_TIPO_COMMESSA: Record<TipoCommessa, string> = {
+  Privata: "#D49324",
+  Pubblica: "#2D80B3",
+  Gara: "#2B2F5E",
+  Concorso: "#64B445",
+  Urbanistica: "#5E9AD3",
+  "Pa.Ma": "#D79D06",
+  Superbonus: "#D96F4B",
+  "Validazione progetti": "#4B5563",
+  "Diagnosi Energetica": "#4D9635",
+};
+
 export function isTipoCommessa(tipo: string | null | undefined): tipo is TipoCommessa {
   return Boolean(tipo && TIPI_COMMESSA.includes(tipo as TipoCommessa));
 }

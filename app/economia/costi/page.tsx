@@ -9,17 +9,46 @@ import {
   costoSocietaAnnuale,
   costoSocietaAnnualeNetto,
   movimentiCostoSocietaMaturati,
+  totaleCostoSocieta,
 } from "@/lib/economia";
 import { finalizzaInputImporto, formattaEuro, parseImporto } from "@/lib/importi";
 import { supabase } from "@/lib/supabase";
 
 type FrequenzaCosto = "Mensile" | "Annuale" | "Una tantum";
-type CostiTab = "fisse" | "una_tantum" | "riepilogo";
+type CategoriaCosto = "Studio" | "Acquisti" | "Collaboratori";
+type CostiTab = "studio" | "acquisti" | "collaboratori" | "riepilogo";
+
+type PersonaCosto = {
+  id: string;
+  nome: string;
+  attivo: boolean;
+  economia_cassa_attiva: boolean;
+  economia_cassa_aliquota: number | string;
+  economia_iva_attiva: boolean;
+  economia_iva_aliquota: number | string;
+};
+
+type VariazioneCosto = {
+  id: string;
+  costo_societa_id: string;
+  data_decorrenza: string;
+  importo: number | string;
+  note: string | null;
+};
+
+type VariazioneCostoDraft = {
+  id: string;
+  data_decorrenza: string;
+  importo: string;
+  note: string;
+  nuova: boolean;
+};
 
 type CostoSocieta = {
   id: string;
   descrizione: string;
   categoria: string | null;
+  persona_id: string | null;
   tipo: string;
   frequenza: FrequenzaCosto;
   importo: number;
@@ -32,19 +61,53 @@ type CostoSocieta = {
   attivo: boolean;
   note: string | null;
   created_at: string;
+  cassa_aliquota?: number;
+  iva_aliquota?: number;
+  variazioni: VariazioneCosto[];
 };
 
-function creaFormIniziale(anno: number) {
+function categoriaCosto(costo: CostoSocieta): CategoriaCosto {
+  if (costo.categoria === "Collaboratori") return "Collaboratori";
+  if (costo.categoria === "Acquisti") return "Acquisti";
+  if (costo.categoria === "Studio") return "Studio";
+  return costo.frequenza === "Una tantum" ? "Acquisti" : "Studio";
+}
+
+function tabCategoria(categoria: CategoriaCosto): CostiTab {
+  if (categoria === "Collaboratori") return "collaboratori";
+  if (categoria === "Acquisti") return "acquisti";
+  return "studio";
+}
+
+function creaFormIniziale(
+  anno: number,
+  categoria: CategoriaCosto = "Studio"
+) {
+  const oggi = new Date();
+  const dataOggi = new Date(
+    oggi.getTime() - oggi.getTimezoneOffset() * 60_000
+  )
+    .toISOString()
+    .slice(0, 10);
   return {
     id: "",
     descrizione: "",
-    frequenza: "Mensile" as FrequenzaCosto,
+    categoria,
+    persona_id: "",
+    frequenza: (categoria === "Acquisti"
+      ? "Una tantum"
+      : "Mensile") as FrequenzaCosto,
     anno_riferimento: String(anno),
+    data_pagamento: dataOggi,
     data_inizio: "",
+    data_fine: "",
+    in_corso: categoria !== "Acquisti",
     numero_mesi: "12",
     importo: "",
-    calcola_cassa: true,
+    calcola_cassa: categoria === "Collaboratori",
     calcola_iva: true,
+    variazioni: [] as VariazioneCostoDraft[],
+    variazioni_originali: [] as string[],
     note: "",
   };
 }
@@ -71,9 +134,10 @@ type CostoForm = ReturnType<typeof creaFormIniziale>;
 
 export default function EconomiaCostiPage() {
   const annoCorrente = new Date().getFullYear();
-  const annoVisualizzato = annoCorrente;
-  const [tab, setTab] = useState<CostiTab>("fisse");
+  const [annoVisualizzato, setAnnoVisualizzato] = useState(annoCorrente);
+  const [tab, setTab] = useState<CostiTab>("studio");
   const [costi, setCosti] = useState<CostoSocieta[]>([]);
+  const [personale, setPersonale] = useState<PersonaCosto[]>([]);
   const [form, setForm] = useState<CostoForm>(() =>
     creaFormIniziale(annoCorrente)
   );
@@ -83,19 +147,74 @@ export default function EconomiaCostiPage() {
   const [formAperto, setFormAperto] = useState(false);
 
   const caricaCosti = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("economia_costi_societa")
-      .select("*")
-      .order("attivo", { ascending: false })
-      .order("created_at", { ascending: false });
+    const [costiRes, personaleRes, variazioniRes] = await Promise.all([
+      supabase
+        .from("economia_costi_societa")
+        .select("*")
+        .order("attivo", { ascending: false })
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("personale")
+        .select(
+          "id, nome, attivo, economia_cassa_attiva, economia_cassa_aliquota, economia_iva_attiva, economia_iva_aliquota"
+        )
+        .order("attivo", { ascending: false })
+        .order("nome"),
+      supabase
+        .from("economia_costi_societa_variazioni")
+        .select("id, costo_societa_id, data_decorrenza, importo, note")
+        .order("data_decorrenza"),
+    ]);
 
+    const error = costiRes.error || personaleRes.error || variazioniRes.error;
     if (error) {
-      setErrore(error.message);
+      setErrore(
+        error.message.includes("economia_costi_societa_variazioni") ||
+          error.message.includes("persona_id")
+          ? "Applica la migrazione supabase-economia-collaboratori-continuativi.sql."
+          : error.message
+      );
       setCaricamento(false);
       return;
     }
 
-    setCosti((data || []) as CostoSocieta[]);
+    const persone = (personaleRes.data || []) as PersonaCosto[];
+    const variazioni = (variazioniRes.data || []) as VariazioneCosto[];
+    const righe = (costiRes.data || []) as Array<
+      Omit<CostoSocieta, "variazioni">
+    >;
+    setPersonale(persone);
+    setCosti(
+      righe.map((costo) => {
+        const persona = persone.find((item) => item.id === costo.persona_id);
+        const cassaAliquota =
+          persona?.economia_cassa_attiva
+            ? parseImporto(persona.economia_cassa_aliquota)
+            : 0;
+        const ivaAliquota =
+          persona?.economia_iva_attiva
+            ? parseImporto(persona.economia_iva_aliquota)
+            : 0;
+        const imponibile = parseImporto(costo.importo);
+        const cassa = persona
+          ? (imponibile * cassaAliquota) / 100
+          : parseImporto(costo.cassa);
+        const iva = persona
+          ? ((imponibile + cassa) * ivaAliquota) / 100
+          : parseImporto(costo.iva);
+        return {
+          ...costo,
+          descrizione: persona?.nome || costo.descrizione,
+          cassa,
+          iva,
+          cassa_aliquota: persona ? cassaAliquota : undefined,
+          iva_aliquota: persona ? ivaAliquota : undefined,
+          variazioni: variazioni.filter(
+            (variazione) => variazione.costo_societa_id === costo.id
+          ),
+        };
+      })
+    );
     setCaricamento(false);
   }, []);
 
@@ -137,24 +256,69 @@ export default function EconomiaCostiPage() {
     };
   }, [annoVisualizzato, costi]);
 
+  const personaSelezionata = personale.find(
+    (persona) => persona.id === form.persona_id
+  );
   const importoFormNumero = parseImporto(form.importo);
-  const cassaFormNumero = form.calcola_cassa ? importoFormNumero * 0.04 : 0;
-  const ivaFormNumero = form.calcola_iva
-    ? (importoFormNumero + cassaFormNumero) * 0.22
+  const cassaAliquotaForm =
+    form.categoria === "Collaboratori" &&
+    personaSelezionata?.economia_cassa_attiva
+      ? parseImporto(personaSelezionata.economia_cassa_aliquota)
+      : 0;
+  const ivaAliquotaForm =
+    form.categoria === "Collaboratori"
+      ? personaSelezionata?.economia_iva_attiva
+        ? parseImporto(personaSelezionata.economia_iva_aliquota)
+        : 0
+      : form.calcola_iva
+        ? 22
+        : 0;
+  const cassaFormNumero =
+    form.categoria === "Collaboratori" && cassaAliquotaForm > 0
+      ? importoFormNumero * (cassaAliquotaForm / 100)
+      : 0;
+  const ivaFormNumero = ivaAliquotaForm > 0
+    ? (importoFormNumero + cassaFormNumero) * (ivaAliquotaForm / 100)
     : 0;
   const totaleFormNumero =
     importoFormNumero + cassaFormNumero + ivaFormNumero;
   const moltiplicatoreForm =
-    form.frequenza === "Annuale"
+    form.categoria === "Studio" || form.categoria === "Collaboratori"
+      ? 1
+      : form.frequenza === "Annuale"
       ? 12
       : form.frequenza === "Mensile"
         ? Math.max(1, Math.trunc(Number(form.numero_mesi) || 1))
         : 1;
   const totaleFormStimato = totaleFormNumero * moltiplicatoreForm;
-  const speseFisse = costi.filter((costo) => costo.frequenza !== "Una tantum");
-  const speseUnaTantum = costi.filter(
-    (costo) => costo.frequenza === "Una tantum"
+  const speseStudio = costi.filter(
+    (costo) => categoriaCosto(costo) === "Studio"
   );
+  const acquisti = costi.filter(
+    (costo) => categoriaCosto(costo) === "Acquisti"
+  );
+  const speseCollaboratori = costi.filter(
+    (costo) => categoriaCosto(costo) === "Collaboratori"
+  );
+  const anniDisponibili = useMemo(() => {
+    const anni = new Set<number>();
+    for (let anno = annoCorrente - 5; anno <= annoCorrente + 5; anno += 1) {
+      anni.add(anno);
+    }
+    costi.forEach((costo) => {
+      [costo.data_riferimento, costo.data_inizio, costo.data_fine].forEach(
+        (value) => {
+          const anno = Number(value?.slice(0, 4));
+          if (anno >= 2000 && anno <= 2100) anni.add(anno);
+        }
+      );
+      costo.variazioni.forEach((variazione) => {
+        const anno = Number(variazione.data_decorrenza.slice(0, 4));
+        if (anno >= 2000 && anno <= 2100) anni.add(anno);
+      });
+    });
+    return [...anni].sort((a, b) => b - a);
+  }, [annoCorrente, costi]);
 
   function aggiornaForm<K extends keyof CostoForm>(
     campo: K,
@@ -167,11 +331,46 @@ export default function EconomiaCostiPage() {
     });
   }
 
-  function nuovaVoce(frequenza: FrequenzaCosto = "Mensile") {
-    setForm({
-      ...creaFormIniziale(annoVisualizzato),
-      frequenza,
-    });
+  function aggiungiVariazione() {
+    const oggi = new Date();
+    const dataOggi = new Date(
+      oggi.getTime() - oggi.getTimezoneOffset() * 60_000
+    )
+      .toISOString()
+      .slice(0, 10);
+    aggiornaForm("variazioni", [
+      ...form.variazioni,
+      {
+        id: crypto.randomUUID(),
+        data_decorrenza: dataOggi,
+        importo: form.importo,
+        note: "",
+        nuova: true,
+      },
+    ]);
+  }
+
+  function aggiornaVariazione(
+    id: string,
+    modifica: Partial<VariazioneCostoDraft>
+  ) {
+    aggiornaForm(
+      "variazioni",
+      form.variazioni.map((item) =>
+        item.id === id ? { ...item, ...modifica } : item
+      )
+    );
+  }
+
+  function rimuoviVariazione(id: string) {
+    aggiornaForm(
+      "variazioni",
+      form.variazioni.filter((item) => item.id !== id)
+    );
+  }
+
+  function nuovaVoce(categoria: CategoriaCosto) {
+    setForm(creaFormIniziale(annoVisualizzato, categoria));
     setFormAperto(true);
   }
 
@@ -181,29 +380,52 @@ export default function EconomiaCostiPage() {
   }
 
   function apriCosto(costo: CostoSocieta) {
-    setTab(costo.frequenza === "Una tantum" ? "una_tantum" : "fisse");
+    const categoria = categoriaCosto(costo);
+    setTab(tabCategoria(categoria));
     setFormAperto(true);
     setForm({
       id: costo.id,
       descrizione: costo.descrizione,
+      categoria,
+      persona_id: costo.persona_id || "",
       frequenza: costo.frequenza,
       anno_riferimento: costo.data_riferimento
         ? String(new Date(costo.data_riferimento).getFullYear())
         : String(annoVisualizzato),
+      data_pagamento:
+        costo.frequenza === "Una tantum"
+          ? costo.data_riferimento?.slice(0, 10) || ""
+          : "",
       data_inizio: costo.data_inizio || "",
+      data_fine: costo.data_fine || "",
+      in_corso: categoria !== "Acquisti" ? !costo.data_fine : false,
       numero_mesi:
         costo.numero_mesi && costo.numero_mesi > 0
           ? String(costo.numero_mesi)
           : mesiTraDate(costo.data_inizio, costo.data_fine) || "12",
       importo: finalizzaInputImporto(costo.importo),
-      calcola_cassa: Number(costo.cassa || 0) > 0,
+      calcola_cassa:
+        categoria === "Collaboratori" && Number(costo.cassa || 0) > 0,
       calcola_iva: Number(costo.iva || 0) > 0,
+      variazioni: costo.variazioni.map((variazione) => ({
+        id: variazione.id,
+        data_decorrenza: variazione.data_decorrenza,
+        importo: finalizzaInputImporto(variazione.importo),
+        note: variazione.note || "",
+        nuova: false,
+      })),
+      variazioni_originali: costo.variazioni.map((variazione) => variazione.id),
       note: costo.note || "",
     });
   }
 
   async function salvaCosto() {
-    if (!form.descrizione.trim()) {
+    if (form.categoria === "Collaboratori" && !form.persona_id) {
+      alert("Seleziona un collaboratore dalla lista del personale.");
+      return;
+    }
+
+    if (form.categoria !== "Collaboratori" && !form.descrizione.trim()) {
       alert("Inserisci una descrizione del costo.");
       return;
     }
@@ -214,7 +436,8 @@ export default function EconomiaCostiPage() {
     }
 
     if (
-      form.frequenza !== "Mensile" &&
+      form.categoria !== "Studio" &&
+      form.frequenza === "Annuale" &&
       (Number(form.anno_riferimento) < 2000 ||
         Number(form.anno_riferimento) > 2100)
     ) {
@@ -222,12 +445,42 @@ export default function EconomiaCostiPage() {
       return;
     }
 
-    if (form.frequenza === "Mensile" && !form.data_inizio) {
+    if (form.frequenza === "Una tantum" && !form.data_pagamento) {
+      alert("Inserisci la data di pagamento della spesa.");
+      return;
+    }
+
+    if (
+      (form.categoria === "Studio" ||
+        form.categoria === "Collaboratori" ||
+        form.frequenza === "Mensile") &&
+      !form.data_inizio
+    ) {
       alert("Inserisci la data di partenza del costo mensile.");
       return;
     }
 
     if (
+      (form.categoria === "Studio" || form.categoria === "Collaboratori") &&
+      !form.in_corso &&
+      !form.data_fine
+    ) {
+      alert("Inserisci la data dell'ultima spesa oppure seleziona In corso.");
+      return;
+    }
+
+    if (
+      (form.categoria === "Studio" || form.categoria === "Collaboratori") &&
+      !form.in_corso &&
+      form.data_fine < form.data_inizio
+    ) {
+      alert("La data dell'ultima spesa non può precedere la data di partenza.");
+      return;
+    }
+
+    if (
+      form.categoria !== "Studio" &&
+      form.categoria !== "Collaboratori" &&
       form.frequenza === "Mensile" &&
       (Number(form.numero_mesi) < 1 || Number(form.numero_mesi) > 120)
     ) {
@@ -235,25 +488,80 @@ export default function EconomiaCostiPage() {
       return;
     }
 
+    if (form.categoria === "Collaboratori") {
+      const dateVariazioni = new Set<string>();
+      for (const variazione of form.variazioni) {
+        if (!variazione.data_decorrenza) {
+          alert("Inserisci la data di decorrenza di ogni variazione.");
+          return;
+        }
+        if (parseImporto(variazione.importo) <= 0) {
+          alert("Inserisci un nuovo compenso maggiore di zero.");
+          return;
+        }
+        if (variazione.data_decorrenza <= form.data_inizio) {
+          alert("La variazione deve essere successiva alla data di partenza.");
+          return;
+        }
+        if (
+          !form.in_corso &&
+          form.data_fine &&
+          variazione.data_decorrenza > form.data_fine
+        ) {
+          alert("La variazione non può essere successiva all'ultimo pagamento.");
+          return;
+        }
+        if (dateVariazioni.has(variazione.data_decorrenza)) {
+          alert("Non puoi inserire due variazioni con la stessa decorrenza.");
+          return;
+        }
+        dateVariazioni.add(variazione.data_decorrenza);
+      }
+    }
+
     setSalvataggio(true);
 
+    const nomePersona = personaSelezionata?.nome || form.descrizione.trim();
     const payload = {
-      descrizione: form.descrizione.trim(),
-      categoria: null,
-      tipo: form.frequenza === "Una tantum" ? "Una tantum" : "Fisso",
-      frequenza: form.frequenza,
+      descrizione: nomePersona,
+      categoria: form.categoria,
+      persona_id:
+        form.categoria === "Collaboratori" ? form.persona_id : null,
+      tipo:
+        form.categoria === "Acquisti" || form.frequenza === "Una tantum"
+          ? "Una tantum"
+          : "Fisso",
+      frequenza:
+        form.categoria === "Studio" || form.categoria === "Collaboratori"
+          ? "Mensile"
+          : form.frequenza,
       importo: importoFormNumero,
       cassa: cassaFormNumero,
       iva: ivaFormNumero,
       data_riferimento:
-        form.frequenza !== "Mensile"
+        form.categoria === "Studio" || form.categoria === "Collaboratori"
+          ? null
+          : form.frequenza === "Annuale"
           ? `${form.anno_riferimento || annoVisualizzato}-01-01`
-          : null,
+          : form.frequenza === "Una tantum"
+            ? form.data_pagamento
+            : null,
       data_inizio:
-        form.frequenza === "Mensile" ? form.data_inizio || null : null,
-      data_fine: null,
-      numero_mesi:
+        form.categoria === "Studio" ||
+        form.categoria === "Collaboratori" ||
         form.frequenza === "Mensile"
+          ? form.data_inizio || null
+          : null,
+      data_fine:
+        (form.categoria === "Studio" ||
+          form.categoria === "Collaboratori") &&
+        !form.in_corso
+          ? form.data_fine || null
+          : null,
+      numero_mesi:
+        form.categoria === "Studio" || form.categoria === "Collaboratori"
+          ? null
+          : form.frequenza === "Mensile"
           ? Math.trunc(Number(form.numero_mesi) || 1)
           : form.frequenza === "Annuale"
             ? 12
@@ -268,14 +576,79 @@ export default function EconomiaCostiPage() {
           .from("economia_costi_societa")
           .update(payload)
           .eq("id", form.id)
-      : supabase.from("economia_costi_societa").insert(payload);
+          .select("id")
+          .single()
+      : supabase
+          .from("economia_costi_societa")
+          .insert(payload)
+          .select("id")
+          .single();
 
-    const { error } = await richiesta;
+    const { data: costoSalvato, error } = await richiesta;
 
     if (error) {
       alert(`Errore durante il salvataggio del costo: ${error.message}`);
       setSalvataggio(false);
       return;
+    }
+
+    const costoId = costoSalvato?.id || form.id;
+    if (form.categoria === "Collaboratori" && costoId) {
+      const idsCorrenti = new Set(
+        form.variazioni.filter((item) => !item.nuova).map((item) => item.id)
+      );
+      const idsDaEliminare = form.variazioni_originali.filter(
+        (id) => !idsCorrenti.has(id)
+      );
+      const variazioniEsistenti = form.variazioni.filter((item) => !item.nuova);
+      const variazioniNuove = form.variazioni.filter((item) => item.nuova);
+
+      if (idsDaEliminare.length > 0) {
+        const { error: erroreEliminazione } = await supabase
+          .from("economia_costi_societa_variazioni")
+          .delete()
+          .in("id", idsDaEliminare);
+        if (erroreEliminazione) {
+          alert(`Costo salvato, ma le variazioni non sono state aggiornate: ${erroreEliminazione.message}`);
+          setSalvataggio(false);
+          await caricaCosti();
+          return;
+        }
+      }
+
+      const operazioni = [
+        ...variazioniEsistenti.map((variazione) =>
+          supabase
+            .from("economia_costi_societa_variazioni")
+            .update({
+              data_decorrenza: variazione.data_decorrenza,
+              importo: parseImporto(variazione.importo),
+              note: variazione.note.trim() || null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", variazione.id)
+        ),
+        ...(variazioniNuove.length > 0
+          ? [
+              supabase.from("economia_costi_societa_variazioni").insert(
+                variazioniNuove.map((variazione) => ({
+                  costo_societa_id: costoId,
+                  data_decorrenza: variazione.data_decorrenza,
+                  importo: parseImporto(variazione.importo),
+                  note: variazione.note.trim() || null,
+                }))
+              ),
+            ]
+          : []),
+      ];
+      const risultati = await Promise.all(operazioni);
+      const erroreVariazione = risultati.find((risultato) => risultato.error)?.error;
+      if (erroreVariazione) {
+        alert(`Costo salvato, ma le variazioni non sono state aggiornate: ${erroreVariazione.message}`);
+        setSalvataggio(false);
+        await caricaCosti();
+        return;
+      }
     }
 
     await caricaCosti();
@@ -310,15 +683,16 @@ export default function EconomiaCostiPage() {
           <div>
             <h2 className="page-title">Costi società</h2>
             <p className="mt-1 text-[15px] text-[#D79D06]">
-              Affitto, spese fisse, costi annuali e spese una tantum
+              Spese dello studio, acquisti e costi dei collaboratori
             </p>
           </div>
 
           <div className="overflow-x-auto rounded-2xl border border-white bg-white p-1.5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]" role="tablist" aria-label="Sezioni costi società">
-            <div className="flex min-w-max gap-1">
+            <div className="flex w-full min-w-max items-center gap-1">
               {([
-                ["fisse", "Spese fisse"],
-                ["una_tantum", "Spese una tantum"],
+                ["studio", "Spese studio"],
+                ["acquisti", "Acquisti"],
+                ["collaboratori", "Collaboratori"],
                 ["riepilogo", "Riepilogo"],
               ] as Array<[CostiTab, string]>).map(([id, label]) => (
                 <button
@@ -336,6 +710,28 @@ export default function EconomiaCostiPage() {
                   {label}
                 </button>
               ))}
+
+              {tab === "riepilogo" ? (
+                <label className="ml-auto flex items-center gap-3 border-l border-gray-100 pl-4">
+                  <span className="whitespace-nowrap text-sm font-semibold text-[#2B2F5E]">
+                    Anno riepilogo
+                  </span>
+                  <select
+                    value={annoVisualizzato}
+                    onChange={(event) =>
+                      setAnnoVisualizzato(Number(event.target.value))
+                    }
+                    className="h-10 min-w-28 rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-[#2B2F5E] outline-none focus:border-[#5E9AD3]"
+                    aria-label="Anno del riepilogo"
+                  >
+                    {anniDisponibili.map((anno) => (
+                      <option key={anno} value={anno}>
+                        {anno}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
             </div>
           </div>
 
@@ -348,25 +744,31 @@ export default function EconomiaCostiPage() {
           ) : (
             <>
               <section
-                className={`${tab === "riepilogo" ? "grid" : "hidden"} grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4`}
+                className={tab === "riepilogo" ? "block" : "hidden"}
                 role="tabpanel"
               >
-                <Kpi
-                  label="Costi sostenuti fino a oggi"
-                  value={formattaEuro(riepilogo.costiSostenuti)}
-                />
-                <Kpi
-                  label="Costi previsti entro fine anno"
-                  value={formattaEuro(riepilogo.costiPrevisti)}
-                />
-                <Kpi
-                  label="Cassa totale"
-                  value={formattaEuro(riepilogo.cassaTotale)}
-                />
-                <Kpi
-                  label="IVA totale"
-                  value={formattaEuro(riepilogo.ivaTotale)}
-                />
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <Kpi
+                    label="Costi sostenuti fino a oggi"
+                    value={formattaEuro(riepilogo.costiSostenuti)}
+                    description={`Imponibili pagati nel ${annoVisualizzato} entro la data odierna.`}
+                  />
+                  <Kpi
+                    label="Costi previsti entro fine anno"
+                    value={formattaEuro(riepilogo.costiPrevisti)}
+                    description={`Imponibili pagati e previsti nel ${annoVisualizzato} fino al 31 dicembre.`}
+                  />
+                  <Kpi
+                    label="Cassa totale"
+                    value={formattaEuro(riepilogo.cassaTotale)}
+                    description={`Cassa versata nel ${annoVisualizzato} entro la data odierna.`}
+                  />
+                  <Kpi
+                    label="IVA totale"
+                    value={formattaEuro(riepilogo.ivaTotale)}
+                    description={`IVA versata nel ${annoVisualizzato} entro la data odierna.`}
+                  />
+                </div>
               </section>
 
               <div className={`${tab === "riepilogo" ? "hidden" : "grid"} grid-cols-1 gap-5 ${formAperto ? "2xl:grid-cols-[420px_minmax(0,1fr)]" : ""}`} role="tabpanel">
@@ -389,88 +791,119 @@ export default function EconomiaCostiPage() {
                   }
                 >
                   <div className="space-y-4">
-                    <Campo
-                      label="Descrizione"
-                      value={form.descrizione}
-                      onChange={(value) => aggiornaForm("descrizione", value)}
-                      placeholder="Es. Affitto studio"
-                    />
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {form.categoria === "Collaboratori" ? (
                       <label className="block">
                         <span className="mb-2 block text-sm font-semibold text-[#2B2F5E]">
-                          Frequenza
+                          Collaboratore
                         </span>
                         <select
-                          value={form.frequenza}
+                          value={form.persona_id}
                           onChange={(event) =>
-                            aggiornaForm(
-                              "frequenza",
-                              event.target.value as FrequenzaCosto
-                            )
+                            aggiornaForm("persona_id", event.target.value)
                           }
                           className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#2B2F5E] outline-none focus:border-[#5E9AD3]"
+                          required
                         >
-                          <option value="Mensile">Mensile</option>
-                          <option value="Annuale">Annuale</option>
-                          <option value="Una tantum">Una tantum</option>
+                          <option value="">Seleziona dalla lista del personale</option>
+                          {personale.map((persona) => (
+                            <option key={persona.id} value={persona.id}>
+                              {persona.nome}{persona.attivo ? "" : " (non attivo)"}
+                            </option>
+                          ))}
                         </select>
                       </label>
+                    ) : (
+                      <Campo
+                        label="Descrizione"
+                        value={form.descrizione}
+                        onChange={(value) => aggiornaForm("descrizione", value)}
+                        placeholder="Es. Affitto studio"
+                      />
+                    )}
 
-                      {form.frequenza !== "Mensile" && (
-                        <label className="block">
-                          <span className="mb-2 block text-sm font-semibold text-[#2B2F5E]">
-                            Anno riferimento
-                          </span>
-                          <input
-                            type="number"
-                            value={form.anno_riferimento}
-                            onChange={(event) =>
-                              aggiornaForm("anno_riferimento", event.target.value)
-                            }
-                            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#2B2F5E] outline-none focus:border-[#5E9AD3]"
-                          />
-                        </label>
-                      )}
-                    </div>
+                    {form.categoria === "Studio" ||
+                    form.categoria === "Collaboratori" ? (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <label className="block">
+                            <span className="mb-2 block text-sm font-semibold text-[#2B2F5E]">
+                              Data di partenza
+                            </span>
+                            <input
+                              type="date"
+                              value={form.data_inizio}
+                              onChange={(event) =>
+                                aggiornaForm("data_inizio", event.target.value)
+                              }
+                              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#2B2F5E] outline-none focus:border-[#5E9AD3]"
+                              required
+                            />
+                          </label>
 
-                    {form.frequenza === "Mensile" && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <label className="block">
-                          <span className="mb-2 block text-sm font-semibold text-[#2B2F5E]">
-                            Data partenza
-                          </span>
-                          <input
-                            type="date"
-                            value={form.data_inizio}
-                            onChange={(event) =>
-                              aggiornaForm("data_inizio", event.target.value)
-                            }
-                            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#2B2F5E] outline-none focus:border-[#5E9AD3]"
-                          />
-                        </label>
+                          {!form.in_corso && (
+                            <label className="block">
+                              <span className="mb-2 block text-sm font-semibold text-[#2B2F5E]">
+                                {form.categoria === "Collaboratori"
+                                  ? "Data ultimo pagamento"
+                                  : "Data ultima spesa"}
+                              </span>
+                              <input
+                                type="date"
+                                min={form.data_inizio || undefined}
+                                value={form.data_fine}
+                                onChange={(event) =>
+                                  aggiornaForm("data_fine", event.target.value)
+                                }
+                                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#2B2F5E] outline-none focus:border-[#5E9AD3]"
+                                required
+                              />
+                            </label>
+                          )}
+                        </div>
 
-                        <label className="block">
-                          <span className="mb-2 block text-sm font-semibold text-[#2B2F5E]">
-                            Numero mesi
-                          </span>
+                        <label className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-[#F2F2F2]/70 p-4 cursor-pointer">
                           <input
-                            type="number"
-                            min={1}
-                            max={120}
-                            value={form.numero_mesi}
+                            type="checkbox"
+                            checked={form.in_corso}
                             onChange={(event) =>
-                              aggiornaForm("numero_mesi", event.target.value)
+                              aggiornaForm("in_corso", event.target.checked)
                             }
-                            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#2B2F5E] outline-none focus:border-[#5E9AD3]"
+                            className="h-4 w-4 accent-[#64B445]"
                           />
+                          <span>
+                            <span className="block text-sm font-semibold text-[#2B2F5E]">
+                              In corso
+                            </span>
+                            <span className="block text-xs text-gray-500">
+                              {form.categoria === "Collaboratori"
+                                ? "Il pagamento si ripete ogni mese nello stesso giorno della data di partenza."
+                                : "La spesa si ripete ogni mese nello stesso giorno della data di partenza."}
+                            </span>
+                          </span>
                         </label>
                       </div>
+                    ) : (
+                      <label className="block">
+                        <span className="mb-2 block text-sm font-semibold text-[#2B2F5E]">
+                          Data di pagamento
+                        </span>
+                        <input
+                          type="date"
+                          value={form.data_pagamento}
+                          onChange={(event) =>
+                            aggiornaForm("data_pagamento", event.target.value)
+                          }
+                          className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#2B2F5E] outline-none focus:border-[#5E9AD3]"
+                          required
+                        />
+                      </label>
                     )}
 
                     <label className="block">
                       <span className="mb-2 block text-sm font-semibold text-[#2B2F5E]">
-                        Importo
+                        {form.categoria === "Collaboratori"
+                          ? "Compenso mensile"
+                          : "Importo"}
                       </span>
                       <ImportoInput
                         value={form.importo}
@@ -478,25 +911,44 @@ export default function EconomiaCostiPage() {
                       />
                     </label>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <AccessorioAutomatico
-                        label="Cassa 4%"
-                        checked={form.calcola_cassa}
-                        onChange={(value) => aggiornaForm("calcola_cassa", value)}
-                        value={cassaFormNumero}
-                      />
-
+                    {form.categoria === "Collaboratori" ? (
+                      <div className="rounded-2xl border border-[#D7E8F5] bg-[#E8F2FA] p-4">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#2D80B3]">
+                          Regime fiscale dal personale
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-[#2B2F5E]">
+                          Cassa {cassaAliquotaForm > 0 ? `${cassaAliquotaForm}%` : "non prevista"}
+                          {" · "}
+                          IVA {ivaAliquotaForm > 0 ? `${ivaAliquotaForm}%` : "non prevista"}
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Le aliquote si modificano dalla pagina Personale della gestione economica.
+                        </p>
+                      </div>
+                    ) : (
                       <AccessorioAutomatico
                         label="IVA 22%"
                         checked={form.calcola_iva}
                         onChange={(value) => aggiornaForm("calcola_iva", value)}
                         value={ivaFormNumero}
                       />
-                    </div>
+                    )}
+
+                    {form.categoria === "Collaboratori" && (
+                      <VariazioniCollaboratore
+                        variazioni={form.variazioni}
+                        onAdd={aggiungiVariazione}
+                        onChange={aggiornaVariazione}
+                        onRemove={rimuoviVariazione}
+                      />
+                    )}
 
                     <div className="rounded-2xl bg-[#F2F2F2]/70 p-4">
                       <p className="text-[11px] uppercase tracking-[0.12em] font-bold text-gray-400">
-                        Totale costo
+                        {form.categoria === "Studio" ||
+                        form.categoria === "Collaboratori"
+                          ? "Costo mensile"
+                          : "Totale costo"}
                       </p>
                       <p className="mt-2 text-lg font-semibold text-[#2B2F5E]">
                         {formattaEuro(totaleFormStimato)}
@@ -549,22 +1001,36 @@ export default function EconomiaCostiPage() {
                 </Card> : null}
 
                 <div className="space-y-5">
-                  {tab === "fisse" ? <ArchivioCosti
-                    title="Archivio spese fisse"
-                    emptyText="Nessuna spesa fissa inserita."
-                    costi={speseFisse}
+                  {tab === "studio" ? <ArchivioCosti
+                    title="Archivio spese studio"
+                    emptyText="Nessuna spesa dello studio inserita."
+                    costi={speseStudio}
                     annoCorrente={annoVisualizzato}
                     onOpen={apriCosto}
-                    onAdd={() => nuovaVoce("Mensile")}
+                    onAdd={() => nuovaVoce("Studio")}
                     showPeriodo
+                    showFrequency={false}
                   /> : null}
-                  {tab === "una_tantum" ? <ArchivioCosti
-                    title="Archivio spese una tantum"
-                    emptyText="Nessuna spesa una tantum inserita."
-                    costi={speseUnaTantum}
+                  {tab === "acquisti" ? <ArchivioCosti
+                    title="Archivio acquisti"
+                    emptyText="Nessun acquisto inserito."
+                    costi={acquisti}
                     annoCorrente={annoVisualizzato}
                     onOpen={apriCosto}
-                    onAdd={() => nuovaVoce("Una tantum")}
+                    onAdd={() => nuovaVoce("Acquisti")}
+                    showFrequency={false}
+                    showTotal
+                  /> : null}
+                  {tab === "collaboratori" ? <ArchivioCosti
+                    title="Archivio costi collaboratori"
+                    emptyText="Nessun costo collaboratore inserito."
+                    costi={speseCollaboratori}
+                    annoCorrente={annoVisualizzato}
+                    onOpen={apriCosto}
+                    onAdd={() => nuovaVoce("Collaboratori")}
+                    showPeriodo
+                    showCassa
+                    showFrequency={false}
                   /> : null}
                 </div>
               </div>
@@ -573,6 +1039,114 @@ export default function EconomiaCostiPage() {
         </div>
       </EconomiaAccessGuard>
     </LayoutApp>
+  );
+}
+
+function VariazioniCollaboratore({
+  variazioni,
+  onAdd,
+  onChange,
+  onRemove,
+}: {
+  variazioni: VariazioneCostoDraft[];
+  onAdd: () => void;
+  onChange: (id: string, modifica: Partial<VariazioneCostoDraft>) => void;
+  onRemove: (id: string) => void;
+}) {
+  const ordinate = [...variazioni].sort((a, b) =>
+    a.data_decorrenza.localeCompare(b.data_decorrenza)
+  );
+
+  return (
+    <section className="rounded-2xl border border-gray-100 bg-[#F8F9FB] p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-[#2B2F5E]">
+            Variazioni del compenso
+          </h3>
+          <p className="mt-1 text-xs text-gray-500">
+            Registra il nuovo importo mensile e la relativa decorrenza.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#2B2F5E] text-white hover:bg-[#23264D] cursor-pointer"
+          aria-label="Aggiungi variazione del compenso"
+          title="Aggiungi variazione"
+        >
+          <AppIcon name="plus" size={16} />
+        </button>
+      </div>
+
+      {ordinate.length === 0 ? (
+        <p className="mt-4 rounded-xl border border-dashed border-gray-200 bg-white px-4 py-5 text-center text-xs text-gray-400">
+          Nessuna variazione inserita.
+        </p>
+      ) : (
+        <div className="mt-4 space-y-3">
+          {ordinate.map((variazione) => (
+            <div
+              key={variazione.id}
+              className="grid grid-cols-1 gap-3 rounded-xl border border-gray-100 bg-white p-3 sm:grid-cols-[150px_minmax(150px,1fr)_minmax(180px,1.4fr)_40px]"
+            >
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold text-[#2B2F5E]">
+                  Decorrenza
+                </span>
+                <input
+                  type="date"
+                  value={variazione.data_decorrenza}
+                  onChange={(event) =>
+                    onChange(variazione.id, {
+                      data_decorrenza: event.target.value,
+                    })
+                  }
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-[#2B2F5E] outline-none focus:border-[#5E9AD3]"
+                  required
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold text-[#2B2F5E]">
+                  Nuovo compenso
+                </span>
+                <ImportoInput
+                  value={variazione.importo}
+                  onChange={(value) =>
+                    onChange(variazione.id, { importo: value })
+                  }
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold text-[#2B2F5E]">
+                  Nota
+                </span>
+                <input
+                  value={variazione.note}
+                  onChange={(event) =>
+                    onChange(variazione.id, { note: event.target.value })
+                  }
+                  placeholder="Es. aumento concordato"
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-[#2B2F5E] outline-none focus:border-[#5E9AD3]"
+                />
+              </label>
+
+              <button
+                type="button"
+                onClick={() => onRemove(variazione.id)}
+                className="flex h-10 w-10 items-center justify-center self-end rounded-xl text-red-600 hover:bg-red-50 cursor-pointer"
+                aria-label="Rimuovi variazione"
+                title="Rimuovi variazione"
+              >
+                <AppIcon name="x" size={16} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -593,13 +1167,26 @@ function Card({
   );
 }
 
-function Kpi({ label, value }: { label: string; value: string }) {
+function Kpi({
+  label,
+  value,
+  description,
+}: {
+  label: string;
+  value: string;
+  description?: string;
+}) {
   return (
     <div className="rounded-2xl border border-white bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
       <p className="text-[11px] uppercase tracking-[0.12em] font-bold text-gray-400">
         {label}
       </p>
       <p className="mt-3 text-2xl font-semibold text-[#2B2F5E]">{value}</p>
+      {description ? (
+        <p className="mt-2 text-xs leading-relaxed text-gray-500">
+          {description}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -656,6 +1243,9 @@ function ArchivioCosti({
   onOpen,
   onAdd,
   showPeriodo = false,
+  showCassa = false,
+  showFrequency = true,
+  showTotal = false,
 }: {
   title: string;
   emptyText: string;
@@ -664,6 +1254,9 @@ function ArchivioCosti({
   onOpen: (costo: CostoSocieta) => void;
   onAdd: () => void;
   showPeriodo?: boolean;
+  showCassa?: boolean;
+  showFrequency?: boolean;
+  showTotal?: boolean;
 }) {
   return (
     <Card
@@ -693,14 +1286,18 @@ function ArchivioCosti({
             <thead className="text-[11px] uppercase tracking-[0.12em] text-gray-400">
               <tr className="border-b border-gray-100">
                 <th className="py-3 text-left">Costo</th>
-                <th className="py-3 text-left">Frequenza</th>
+                {showFrequency && (
+                  <th className="py-3 text-left">Frequenza</th>
+                )}
                 <th className="py-3 text-left">
-                  {showPeriodo ? "Riferimento" : "Anno rif."}
+                  {showPeriodo ? "Riferimento" : "Data pagamento"}
                 </th>
                 <th className="py-3 text-right">Importo</th>
-                <th className="py-3 text-right">Cassa</th>
+                {showCassa && <th className="py-3 text-right">Cassa</th>}
                 <th className="py-3 text-right">IVA</th>
-                <th className="py-3 text-right">Costi {annoCorrente}</th>
+                <th className="py-3 text-right">
+                  {showTotal ? "TOTALE" : `Costi ${annoCorrente}`}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -715,25 +1312,35 @@ function ArchivioCosti({
                       {costo.descrizione}
                     </p>
                   </td>
-                  <td className="py-3 text-[#2B2F5E]">{costo.frequenza}</td>
+                  {showFrequency && (
+                    <td className="py-3 text-[#2B2F5E]">
+                      {costo.frequenza}
+                    </td>
+                  )}
                   <td className="py-3 text-[#2B2F5E]">
                     {showPeriodo
                       ? formattaRiferimentoCosto(costo)
                       : costo.data_riferimento
-                        ? new Date(costo.data_riferimento).getFullYear()
+                        ? formattaData(costo.data_riferimento)
                         : "-"}
                   </td>
                   <td className="py-3 text-right">
                     {formattaEuro(costo.importo)}
                   </td>
-                  <td className="py-3 text-right">
-                    {formattaEuro(costo.cassa || 0)}
-                  </td>
+                  {showCassa && (
+                    <td className="py-3 text-right">
+                      {formattaEuro(costo.cassa || 0)}
+                    </td>
+                  )}
                   <td className="py-3 text-right">
                     {formattaEuro(costo.iva || 0)}
                   </td>
                   <td className="py-3 text-right font-semibold text-[#2B2F5E]">
-                    {formattaEuro(costoSocietaAnnuale(costo, annoCorrente))}
+                    {formattaEuro(
+                      showTotal
+                        ? totaleCostoSocieta(costo)
+                        : costoSocietaAnnuale(costo, annoCorrente)
+                    )}
                   </td>
                 </tr>
               ))}
@@ -746,6 +1353,16 @@ function ArchivioCosti({
 }
 
 function formattaRiferimentoCosto(costo: CostoSocieta) {
+  if (
+    categoriaCosto(costo) === "Studio" ||
+    categoriaCosto(costo) === "Collaboratori"
+  ) {
+    if (!costo.data_inizio) return "-";
+    return costo.data_fine
+      ? `Dal ${formattaData(costo.data_inizio)} al ${formattaData(costo.data_fine)}`
+      : `Dal ${formattaData(costo.data_inizio)} · In corso`;
+  }
+
   if (costo.frequenza === "Annuale") {
     return costo.data_riferimento
       ? `Anno ${new Date(costo.data_riferimento).getFullYear()}`
@@ -763,7 +1380,9 @@ function formattaRiferimentoCosto(costo: CostoSocieta) {
       : "-";
   }
 
-  return "-";
+  return costo.data_riferimento
+    ? `Pagamento ${formattaData(costo.data_riferimento)}`
+    : "-";
 }
 
 function formattaData(value: string | null) {

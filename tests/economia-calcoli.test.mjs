@@ -28,7 +28,9 @@ const {
   calcolaRigaFiscale,
   calcolaRiepilogoEconomico,
 } = await import(calcoliUrl);
-const { movimentiCostoSocietaMaturati } = await import(economiaUrl);
+const { costoSocietaAnnualeNetto, movimentiCostoSocietaMaturati } = await import(
+  economiaUrl
+);
 
 const schedaBase = {
   compenso_iniziale: 19_325,
@@ -338,7 +340,28 @@ test("24. pagamento con fattura usa il profilo aggiornato del personale", () => 
   assert.equal(fiscale.totale, 1_268.8);
 });
 
-test("25. FISSO e OPERATIVO sono calcolati entrambi sul totale", () => {
+test("25. collaboratore esterno usa le aliquote salvate senza profilo fiscale", () => {
+  const aliquote = aliquotePagamentoCollaboratore({
+    tipo: "esterno",
+    conFattura: true,
+    cassaSalvata: 4,
+    ivaSalvata: 22,
+  });
+  const fiscale = calcolaRigaFiscale({
+    imponibile: 1_000,
+    ...aliquote,
+    ritenutaAliquota: 0,
+    cassaBase: "imponibile",
+    ivaBase: "imponibile_cassa",
+    ritenutaBase: "nessuna",
+  });
+  assert.deepEqual(aliquote, { cassaAliquota: 4, ivaAliquota: 22 });
+  assert.equal(fiscale.cassa, 40);
+  assert.equal(fiscale.iva, 228.8);
+  assert.equal(fiscale.totale, 1_268.8);
+});
+
+test("26. FISSO e OPERATIVO sono calcolati entrambi sul totale", () => {
   const quote = calcolaQuoteTrattenutaFidepa({
     valoreTotale: 19_825,
     fissoPercentuale: 10,
@@ -350,4 +373,215 @@ test("25. FISSO e OPERATIVO sono calcolati entrambi sul totale", () => {
     quotaOperativo: 991.25,
     quotaTotale: 2_973.75,
   });
+});
+
+test("27. spesa una tantum matura alla data effettiva di pagamento", () => {
+  const costo = {
+    categoria: "Collaboratori",
+    frequenza: "Una tantum",
+    importo: 500,
+    cassa: 20,
+    iva: 114.4,
+    data_riferimento: "2026-07-15",
+    attivo: true,
+  };
+
+  assert.deepEqual(
+    movimentiCostoSocietaMaturati(costo, new Date(2026, 6, 14)),
+    []
+  );
+  assert.deepEqual(
+    movimentiCostoSocietaMaturati(costo, new Date(2026, 6, 15)),
+    [
+      {
+        dataPagamento: "2026-07-15",
+        importo: 500,
+        cassa: 20,
+        iva: 114.4,
+      },
+    ]
+  );
+});
+
+test("28. la Cassa è conteggiata solo nei costi collaboratori", () => {
+  const base = {
+    frequenza: "Una tantum",
+    importo: 500,
+    cassa: 20,
+    iva: 114.4,
+    data_riferimento: "2026-07-15",
+    attivo: true,
+  };
+  const [studio] = movimentiCostoSocietaMaturati(
+    { ...base, categoria: "Studio" },
+    new Date(2026, 6, 15)
+  );
+  const [collaboratore] = movimentiCostoSocietaMaturati(
+    { ...base, categoria: "Collaboratori" },
+    new Date(2026, 6, 15)
+  );
+
+  assert.equal(studio.cassa, 0);
+  assert.equal(studio.iva, 114.4);
+  assert.equal(collaboratore.cassa, 20);
+  assert.equal(collaboratore.iva, 114.4);
+});
+
+test("29. le spese studio ricorrono nel giorno di partenza", () => {
+  const movimenti = movimentiCostoSocietaMaturati(
+    {
+      categoria: "Studio",
+      frequenza: "Mensile",
+      importo: 100,
+      iva: 22,
+      data_inizio: "2026-01-31",
+      data_fine: "2026-04-30",
+      attivo: true,
+    },
+    new Date(2026, 3, 30)
+  );
+
+  assert.deepEqual(
+    movimenti.map((movimento) => movimento.dataPagamento),
+    ["2026-01-31", "2026-02-28", "2026-03-31", "2026-04-30"]
+  );
+});
+
+test("30. una spesa studio in corso resta prevista per tutto l'anno", () => {
+  const costo = {
+    categoria: "Studio",
+    frequenza: "Mensile",
+    importo: 100,
+    data_inizio: "2025-05-15",
+    data_fine: null,
+    numero_mesi: null,
+    attivo: true,
+  };
+
+  assert.equal(costoSocietaAnnualeNetto(costo, 2026), 1_200);
+  assert.equal(
+    movimentiCostoSocietaMaturati(costo, new Date(2026, 2, 14)).filter(
+      (movimento) => movimento.dataPagamento.startsWith("2026-")
+    ).length,
+    2
+  );
+});
+
+test("31. la data ultima interrompe i costi prima della ricorrenza successiva", () => {
+  const costo = {
+    categoria: "Studio",
+    frequenza: "Mensile",
+    importo: 100,
+    data_inizio: "2025-05-15",
+    data_fine: "2026-03-10",
+    numero_mesi: null,
+    attivo: true,
+  };
+
+  assert.equal(costoSocietaAnnualeNetto(costo, 2026), 200);
+});
+
+test("32. il compenso continuativo applica le variazioni dalla decorrenza", () => {
+  const costo = {
+    categoria: "Collaboratori",
+    frequenza: "Mensile",
+    importo: 1_000,
+    cassa: 0,
+    iva: 0,
+    cassa_aliquota: 4,
+    iva_aliquota: 22,
+    data_inizio: "2026-01-31",
+    data_fine: "2026-04-30",
+    numero_mesi: null,
+    variazioni: [{ data_decorrenza: "2026-03-01", importo: 1_200 }],
+    attivo: true,
+  };
+  const movimenti = movimentiCostoSocietaMaturati(
+    costo,
+    new Date(2026, 3, 30)
+  );
+
+  assert.deepEqual(
+    movimenti.map((movimento) => movimento.importo),
+    [1_000, 1_000, 1_200, 1_200]
+  );
+  assert.deepEqual(
+    movimenti.map((movimento) => movimento.cassa),
+    [40, 40, 48, 48]
+  );
+  assert.deepEqual(
+    movimenti.map((movimento) => movimento.iva),
+    [228.8, 228.8, 274.56, 274.56]
+  );
+  assert.equal(costoSocietaAnnualeNetto(costo, 2026), 4_400);
+});
+
+test("33. il collaboratore in corso prosegue senza data finale", () => {
+  const movimenti = movimentiCostoSocietaMaturati(
+    {
+      categoria: "Collaboratori",
+      frequenza: "Mensile",
+      importo: 1_000,
+      cassa_aliquota: 0,
+      iva_aliquota: 0,
+      data_inizio: "2026-01-15",
+      data_fine: null,
+      variazioni: [],
+      attivo: true,
+    },
+    new Date(2026, 2, 14)
+  );
+
+  assert.deepEqual(
+    movimenti.map((movimento) => movimento.dataPagamento),
+    ["2026-01-15", "2026-02-15"]
+  );
+});
+
+test("34. il profilo personale disattivato prevale sui vecchi importi fiscali", () => {
+  const [movimento] = movimentiCostoSocietaMaturati(
+    {
+      categoria: "Collaboratori",
+      frequenza: "Mensile",
+      importo: 1_000,
+      cassa: 40,
+      iva: 228.8,
+      cassa_aliquota: 0,
+      iva_aliquota: 0,
+      data_inizio: "2026-01-15",
+      data_fine: "2026-01-15",
+      variazioni: [],
+      attivo: true,
+    },
+    new Date(2026, 0, 15)
+  );
+
+  assert.equal(movimento.cassa, 0);
+  assert.equal(movimento.iva, 0);
+});
+
+test("35. il riepilogo annuale isola pagato e previsto per l'anno scelto", () => {
+  const costo = {
+    categoria: "Collaboratori",
+    frequenza: "Mensile",
+    importo: 1_000,
+    cassa_aliquota: 4,
+    iva_aliquota: 22,
+    data_inizio: "2026-12-15",
+    data_fine: null,
+    variazioni: [{ data_decorrenza: "2027-03-01", importo: 1_200 }],
+    attivo: true,
+  };
+  const movimentiAllaDataOdierna = movimentiCostoSocietaMaturati(
+    costo,
+    new Date(2026, 6, 28)
+  );
+
+  assert.equal(
+    movimentiAllaDataOdierna.filter((movimento) =>
+      movimento.dataPagamento.startsWith("2027-")
+    ).length,
+    0
+  );
+  assert.equal(costoSocietaAnnualeNetto(costo, 2027), 14_000);
 });

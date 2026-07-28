@@ -12,8 +12,6 @@ import {
   type TipoCommessa,
 } from "@/lib/tipiCommesse";
 
-type Priorita = "Urgente" | "Alta" | "Normale" | "Bassa" | "Terminato";
-
 type Aggiornamento = {
   id: string;
   testo: string;
@@ -33,6 +31,18 @@ type AggiornamentoRow = Omit<Aggiornamento, "commesse"> & {
     | NonNullable<Aggiornamento["commesse"]>[]
     | null;
 };
+
+function formattaDataAggiornamento(
+  dataNota: string | null,
+  dataInserimento: string
+) {
+  const valore = dataNota || dataInserimento.slice(0, 10);
+  const [anno, mese, giorno] = valore.split("-");
+
+  return anno && mese && giorno
+    ? `${giorno}/${mese}/${anno}`
+    : new Date(dataInserimento).toLocaleDateString("it-IT");
+}
 
 type Persona = {
   id: string;
@@ -132,7 +142,6 @@ type CommessaMappa = {
   latitudine: number | null;
   longitudine: number | null;
   tipo_commessa: TipoCommessa | null;
-  priorita: Priorita | null;
 };
 
 const COLLEGAMENTI_RAPIDI = [
@@ -238,7 +247,7 @@ export default function Home() {
       `
       )
       .eq("commesse.lavoro_privato_non_fidepa", false)
-      .order("data_nota", { ascending: false })
+      .order("data_nota", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
       .limit(12);
 
@@ -422,7 +431,7 @@ export default function Home() {
     const { data, error } = await supabase
       .from("commesse")
       .select(
-        "id, titolo, posizione, latitudine, longitudine, tipo_commessa, priorita"
+        "id, titolo, posizione, latitudine, longitudine, tipo_commessa"
       )
       .eq("lavoro_privato_non_fidepa", false)
       .not("latitudine", "is", null)
@@ -722,11 +731,10 @@ export default function Home() {
                             }
                           />
                           <p className="text-[11px] font-semibold uppercase text-[#D79D06]">
-                            {new Date(item.created_at).toLocaleDateString("it-IT")}{" "}
-                            {new Date(item.created_at).toLocaleTimeString("it-IT", {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
+                            {formattaDataAggiornamento(
+                              item.data_nota,
+                              item.created_at
+                            )}
                           </p>
                           <p className="mt-1 text-[14px] font-semibold text-[#2B2F5E] leading-snug">
                             {item.commesse?.titolo || "Commessa"}

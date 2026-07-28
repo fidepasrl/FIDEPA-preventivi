@@ -1,10 +1,33 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import LayoutApp from "@/components/LayoutApp";
 import AppIcon from "@/components/AppIcon";
+import CommesseFilters from "@/components/commesse/CommesseFilters";
+import CommesseTable from "@/components/commesse/CommesseTable";
+import {
+  EmptyState,
+  LoadingSkeleton,
+  PageHeader,
+  Toast,
+  inputClass,
+  primaryButton,
+  secondaryButton,
+} from "@/components/rappresentanti/Common";
 import { supabase } from "@/lib/supabase";
+import {
+  FILTRI_COMMESSE_INIZIALI,
+  PRIORITA_COMMESSA,
+  creaCsvCommesse,
+  filtraCommesse,
+  leggiCsvCommesse,
+  ordinaCommesse,
+  type CommessaElenco,
+  type FiltriCommesse,
+  type OrdinamentoCommesse,
+  type PrioritaCommessa,
+} from "@/lib/commesse/lista";
 import {
   COLORE_TIPO_COMMESSA,
   SIMBOLO_TIPO_COMMESSA,
@@ -20,7 +43,7 @@ import {
 
 import { CSS } from "@dnd-kit/utilities";
 
-type Priorita = "Urgente" | "Alta" | "Normale" | "Bassa" | "Terminato";
+type Priorita = PrioritaCommessa;
 
 type Cliente = {
   id: string;
@@ -41,30 +64,9 @@ type Professionista = {
   professione: string | null;
 };
 
-type Commessa = {
-  id: string;
-  titolo: string;
-  codice: string | null;
-  descrizione: string | null;
-  cliente_id: string | null;
-  cliente_nome: string | null;
-  posizione: string | null;
-  tipo_commessa: TipoCommessa;
-  priorita: Priorita;
-  url: string | null;
-  data_inizio: string | null;
-  data_fine: string | null;
-  ultimaNota?: string;
-  dataUltimaNota?: string;
-};
+type Commessa = CommessaElenco;
 
-const PRIORITA: Priorita[] = [
-  "Urgente",
-  "Alta",
-  "Normale",
-  "Bassa",
-  "Terminato",
-];
+const PRIORITA: readonly Priorita[] = PRIORITA_COMMESSA;
 
 const STILE_PRIORITA: Record<Priorita, string> = {
   Urgente: "bg-[#d96f4b] text-[#F2F2F2]",
@@ -128,6 +130,7 @@ function ordinaProfessionisti(a: Professionista, b: Professionista) {
 }
 
 export default function CommessePage() {
+  const fileRef = useRef<HTMLInputElement>(null);
   const [commesse, setCommesse] = useState<Commessa[]>([]);
   const [clienti, setClienti] = useState<Cliente[]>([]);
   const [professionisti, setProfessionisti] = useState<Professionista[]>([]);
@@ -141,6 +144,19 @@ export default function CommessePage() {
   const [caricamento, setCaricamento] = useState(true);
   const [modaleAperta, setModaleAperta] = useState(false);
   const [form, setForm] = useState(FORM_INIZIALE);
+  const [ricerca, setRicerca] = useState("");
+  const [filtri, setFiltri] = useState<FiltriCommesse>(
+    FILTRI_COMMESSE_INIZIALI
+  );
+  const [filtriAperti, setFiltriAperti] = useState(false);
+  const [vista, setVista] = useState<"table" | "cards">("table");
+  const [ordine, setOrdine] = useState<OrdinamentoCommesse>("priorita");
+  const [pagina, setPagina] = useState(1);
+  const [righePerPagina, setRighePerPagina] = useState(20);
+  const [toast, setToast] = useState<{
+    message: string;
+    error?: boolean;
+  } | null>(null);
 
   const suggerimentiClienti = clienti.filter((cliente) => {
     if (!form.cliente_nome.trim()) return false;
@@ -178,6 +194,42 @@ export default function CommessePage() {
   const mostraAggiungiRubrica =
     ricercaCollaboratore.trim().length > 0 && !professionistaGiaEsistente;
 
+  const commesseFiltrate = useMemo(
+    () => ordinaCommesse(filtraCommesse(commesse, ricerca, filtri), ordine),
+    [commesse, ricerca, filtri, ordine]
+  );
+  const numeroPagine = Math.max(
+    1,
+    Math.ceil(commesseFiltrate.length / righePerPagina)
+  );
+  const paginaVisualizzata = Math.min(pagina, numeroPagine);
+  const commessePagina = commesseFiltrate.slice(
+    (paginaVisualizzata - 1) * righePerPagina,
+    paginaVisualizzata * righePerPagina
+  );
+  const posizioni = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          commesse
+            .map((commessa) => commessa.posizione?.trim())
+            .filter((item): item is string => Boolean(item))
+        )
+      ).sort((a, b) => a.localeCompare(b, "it", { sensitivity: "base" })),
+    [commesse]
+  );
+  const clientiCommesse = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          commesse
+            .map((commessa) => commessa.cliente_nome?.trim())
+            .filter((item): item is string => Boolean(item))
+        )
+      ).sort((a, b) => a.localeCompare(b, "it", { sensitivity: "base" })),
+    [commesse]
+  );
+
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
 
@@ -212,6 +264,47 @@ export default function CommessePage() {
 
     if (error) {
       console.error("Errore aggiornamento priorità:", error);
+      await caricaCommesse();
+    }
+  }
+
+  async function aggiornaPrioritaDaElenco(
+    commessaDaAggiornare: Commessa,
+    nuovaPriorita: Priorita
+  ) {
+    if (commessaDaAggiornare.priorita === nuovaPriorita) return;
+
+    setCommesse((correnti) =>
+      correnti.map((commessa) =>
+        commessa.id === commessaDaAggiornare.id
+          ? {
+              ...commessa,
+              priorita: nuovaPriorita,
+              data_fine:
+                nuovaPriorita === "Terminato"
+                  ? new Date().toISOString().slice(0, 10)
+                  : commessa.data_fine,
+            }
+          : commessa
+      )
+    );
+
+    const { error } = await supabase
+      .from("commesse")
+      .update({
+        priorita: nuovaPriorita,
+        data_fine:
+          nuovaPriorita === "Terminato"
+            ? new Date().toISOString().slice(0, 10)
+            : commessaDaAggiornare.data_fine,
+      })
+      .eq("id", commessaDaAggiornare.id);
+
+    if (error) {
+      setToast({
+        message: "Non è stato possibile aggiornare la priorità.",
+        error: true,
+      });
       await caricaCommesse();
     }
   }
@@ -297,6 +390,12 @@ export default function CommessePage() {
 
     void caricaDatiIniziali();
   }, []);
+
+  useEffect(() => {
+    // Ogni modifica dei criteri riporta l'elenco alla prima pagina.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPagina(1);
+  }, [ricerca, filtri, ordine, righePerPagina]);
 
   function aggiornaCampo(campo: keyof typeof FORM_INIZIALE, valore: string) {
     setForm((corrente) => ({
@@ -464,6 +563,75 @@ export default function CommessePage() {
     setModaleAperta(true);
   }
 
+  function esportaCsv() {
+    const blob = new Blob([creaCsvCommesse(commesseFiltrate)], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `commesse-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importaCsv(file: File) {
+    try {
+      const righe = leggiCsvCommesse(await file.text());
+      if (!righe.length) throw new Error("Il file non contiene righe importabili.");
+
+      const codiciEsistenti = new Set(
+        commesse
+          .map((commessa) => commessa.codice?.trim().toLocaleLowerCase("it-IT"))
+          .filter(Boolean)
+      );
+      let create = 0;
+      let ignorate = 0;
+
+      for (const riga of righe) {
+        const codiceNormalizzato = riga.codice.trim().toLocaleLowerCase("it-IT");
+        if (!riga.titolo.trim() || (codiceNormalizzato && codiciEsistenti.has(codiceNormalizzato))) {
+          ignorate += 1;
+          continue;
+        }
+        const tipo = TIPI_COMMESSA.includes(riga.tipo_commessa as TipoCommessa)
+          ? (riga.tipo_commessa as TipoCommessa)
+          : "Privata";
+        const priorita = PRIORITA.includes(riga.priorita as Priorita)
+          ? (riga.priorita as Priorita)
+          : "Normale";
+        const { error } = await supabase.from("commesse").insert({
+          titolo: riga.titolo.trim(),
+          codice: riga.codice.trim() || null,
+          cliente_nome: riga.cliente_nome.trim() || null,
+          posizione: riga.posizione.trim() || null,
+          tipo_commessa: tipo,
+          priorita,
+          data_inizio: riga.data_inizio.trim() || null,
+          data_fine: riga.data_fine.trim() || null,
+          descrizione: riga.descrizione.trim() || null,
+        });
+        if (error) {
+          ignorate += 1;
+        } else {
+          create += 1;
+          if (codiceNormalizzato) codiciEsistenti.add(codiceNormalizzato);
+        }
+      }
+
+      await caricaCommesse();
+      setToast({
+        message: `Importazione completata: ${create} create, ${ignorate} ignorate.`,
+      });
+    } catch (error) {
+      setToast({
+        message:
+          error instanceof Error ? error.message : "Importazione non riuscita.",
+        error: true,
+      });
+    }
+  }
+
   async function eliminaCommessa(commessa: Commessa) {
     const conferma = window.confirm(
       `Eliminare definitivamente la commessa "${commessa.titolo}"?`
@@ -488,74 +656,138 @@ export default function CommessePage() {
 
   return (
     <LayoutApp>
-      <div>
-        <div className="flex justify-between items-center gap-4 mb-6">
-          <div>
-            <h2 className="page-title">Commesse</h2>
+      <PageHeader
+        title="Commesse"
+        subtitle="Gestione centrale dei lavori in corso e completati."
+        actions={
+          <button type="button" onClick={apriNuovaCommessa} className={primaryButton}>
+            <AppIcon name="plus" size={16} />
+            Nuova commessa
+          </button>
+        }
+      />
 
-            <p className="text-[15px] text-[#D79D06] mt-1">
-              Gestione centrale dei lavori in corso e completati
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={apriNuovaCommessa}
-            className="bg-[#64B445] text-white w-12 h-12 rounded-md text-2xl font-light hover:bg-[#5AA03E] hover:scale-105 transition flex items-center justify-center shadow-sm cursor-pointer"
-            title="Nuova commessa"
-          >
-            +
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[280px] flex-[1_1_360px]">
+          <AppIcon name="search" size={17} className="pointer-events-none absolute left-3.5 top-3.5 text-[#2B2F5E]/40" />
+          <input
+            className={`${inputClass} pl-10`}
+            value={ricerca}
+            onChange={(event) => setRicerca(event.target.value)}
+            placeholder="Cerca codice, titolo, cliente, posizione, tipologia o aggiornamento..."
+            aria-label="Cerca commesse"
+          />
+        </div>
+        <button type="button" className={`${secondaryButton} shrink-0`} onClick={() => setFiltriAperti((aperti) => !aperti)}>
+          Filtri
+          {Object.entries(filtri).some(([chiave, valore]) => valore && !(chiave === "stato" && valore === "tutte")) && (
+            <span className="h-2 w-2 rounded-full bg-[#D79D06]" aria-label="Filtri attivi" />
+          )}
+        </button>
+        <div className="w-56 shrink-0">
+          <select className={inputClass} value={ordine} onChange={(event) => setOrdine(event.target.value as OrdinamentoCommesse)} aria-label="Ordinamento commesse">
+            <option value="priorita">Priorità</option>
+            <option value="titolo">Titolo A-Z</option>
+            <option value="codice">Codice</option>
+            <option value="posizione">Posizione</option>
+            <option value="tipo">Tipologia</option>
+            <option value="ultimo_aggiornamento">Ultimo aggiornamento</option>
+          </select>
+        </div>
+        <div className="flex shrink-0 rounded-xl border border-[#2B2F5E]/15 bg-white p-1">
+          <button type="button" title="Vista tabellare" onClick={() => setVista("table")} className={`rounded-lg px-3 py-2 text-xs font-semibold ${vista === "table" ? "bg-[#2B2F5E] text-white" : "text-[#2B2F5E]"}`}>
+            Tabella
+          </button>
+          <button type="button" title="Vista a schede" onClick={() => setVista("cards")} className={`rounded-lg px-3 py-2 text-xs font-semibold ${vista === "cards" ? "bg-[#2B2F5E] text-white" : "text-[#2B2F5E]"}`}>
+            Schede
           </button>
         </div>
-
-        {caricamento ? (
-          <p className="text-center text-gray-500 py-10">
-            Caricamento commesse...
-          </p>
-        ) : commesse.length === 0 ? (
-          <p className="text-center text-gray-500 py-10">
-            Nessuna commessa presente.
-          </p>
-        ) : (
-          <DndContext onDragEnd={handleDragEnd}>
-            <div className="space-y-8">
-              {PRIORITA.map((priorita) => {
-                const commessePriorita = commesse.filter(
-                  (commessa) => commessa.priorita === priorita
-                );
-
-                if (commessePriorita.length === 0) return null;
-
-                return (
-                  <PrioritaDropArea key={priorita} priorita={priorita}>
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`px-3 py-1 rounded-sm text-sm font-medium ${STILE_PRIORITA[priorita]}`}
-                      >
-                        {priorita}
-                      </span>
-
-                      <span className="text-sm text-gray-400">
-                        {commessePriorita.length}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                      {commessePriorita.map((commessa) => (
-                        <CommessaDraggableCard
-                          key={commessa.id}
-                          commessa={commessa}
-                          onDelete={eliminaCommessa}
-                        />
-                      ))}
-                    </div>
-                  </PrioritaDropArea>
-                );
-              })}
-            </div>
-          </DndContext>
-        )}
+        <button type="button" className={`${secondaryButton} shrink-0`} onClick={esportaCsv} disabled={!commesseFiltrate.length}>
+          <AppIcon name="download" size={15} />
+          Esporta CSV
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void importaCsv(file);
+            event.target.value = "";
+          }}
+        />
+        <button type="button" className={`${secondaryButton} shrink-0`} onClick={() => fileRef.current?.click()}>
+          Importa CSV
+        </button>
       </div>
+
+      {filtriAperti && (
+        <div className="mb-4">
+          <CommesseFilters filtri={filtri} posizioni={posizioni} clienti={clientiCommesse} onChange={setFiltri} />
+        </div>
+      )}
+
+      <div className="mb-3 flex items-center justify-between text-xs text-[#2B2F5E]/55">
+        <span>{commesseFiltrate.length} commesse</span>
+        {commesseFiltrate.length !== commesse.length && <span>{commesse.length} totali</span>}
+      </div>
+
+      {caricamento ? (
+        <LoadingSkeleton rows={5} />
+      ) : commesseFiltrate.length === 0 ? (
+        <EmptyState
+          title={commesse.length ? "Nessuna commessa corrisponde alla ricerca o ai filtri." : "Non sono ancora presenti commesse."}
+          actionLabel={!commesse.length ? "Aggiungi la prima commessa" : undefined}
+          onAction={!commesse.length ? apriNuovaCommessa : undefined}
+        />
+      ) : vista === "table" ? (
+        <CommesseTable commesse={commessePagina} onPriorityChange={(commessa, priorita) => void aggiornaPrioritaDaElenco(commessa, priorita)} onDelete={eliminaCommessa} />
+      ) : ordine === "priorita" ? (
+        <DndContext onDragEnd={handleDragEnd}>
+          <div className="space-y-7">
+            {PRIORITA.map((priorita) => {
+              const delGruppo = commessePagina.filter((commessa) => commessa.priorita === priorita);
+              if (!delGruppo.length) return null;
+              return (
+                <PrioritaDropArea key={priorita} priorita={priorita}>
+                  <div className="flex items-center gap-3">
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${STILE_PRIORITA[priorita]}`}>{priorita}</span>
+                    <span className="text-xs text-[#2B2F5E]/40">{delGruppo.length}</span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                    {delGruppo.map((commessa) => <CommessaDraggableCard key={commessa.id} commessa={commessa} onDelete={eliminaCommessa} />)}
+                  </div>
+                </PrioritaDropArea>
+              );
+            })}
+          </div>
+        </DndContext>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+          {commessePagina.map((commessa) => (
+            <CommessaCard key={commessa.id} commessa={commessa} onDelete={eliminaCommessa} onPriorityChange={(priorita) => void aggiornaPrioritaDaElenco(commessa, priorita)} />
+          ))}
+        </div>
+      )}
+
+      {!caricamento && commesseFiltrate.length > 0 && (
+        <div className="mt-4 flex flex-col items-center justify-between gap-3 rounded-xl bg-white p-3 sm:flex-row">
+          <label className="flex items-center gap-2 text-xs text-[#2B2F5E]/55">
+            Righe per pagina
+            <select value={righePerPagina} onChange={(event) => setRighePerPagina(Number(event.target.value))} className="rounded-lg border border-[#2B2F5E]/15 px-2 py-1.5 text-[#2B2F5E]">
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
+          </label>
+          <div className="flex items-center gap-2">
+            <button type="button" disabled={paginaVisualizzata <= 1} onClick={() => setPagina((corrente) => Math.max(1, corrente - 1))} className={`${secondaryButton} min-h-9 py-1.5`}>Precedente</button>
+            <span className="px-2 text-xs text-[#2B2F5E]">Pagina {paginaVisualizzata} di {numeroPagine}</span>
+            <button type="button" disabled={paginaVisualizzata >= numeroPagine} onClick={() => setPagina((corrente) => Math.min(numeroPagine, corrente + 1))} className={`${secondaryButton} min-h-9 py-1.5`}>Successiva</button>
+          </div>
+        </div>
+      )}
 
       {modaleAperta && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6">
@@ -813,6 +1045,13 @@ export default function CommessePage() {
           </div>
         </div>
       )}
+      {toast && (
+        <Toast
+          message={toast.message}
+          error={toast.error}
+          onClose={() => setToast(null)}
+        />
+      )}
     </LayoutApp>
   );
 }
@@ -896,6 +1135,59 @@ function PrioritaDropArea({
     >
       {children}
     </section>
+  );
+}
+
+function CommessaCard({
+  commessa,
+  onDelete,
+  onPriorityChange,
+}: {
+  commessa: Commessa;
+  onDelete: (commessa: Commessa) => void;
+  onPriorityChange: (priorita: Priorita) => void;
+}) {
+  return (
+    <article className="rounded-2xl border border-[#2B2F5E]/8 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+      <div className="flex items-start justify-between gap-4">
+        <Link href={`/commesse/${commessa.id}`} className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className={COLORE_TIPO_COMMESSA[commessa.tipo_commessa]} aria-hidden="true">
+              {SIMBOLO_TIPO_COMMESSA[commessa.tipo_commessa]}
+            </span>
+            <h3 className="truncate text-[16px] font-semibold text-[#2B2F5E]">
+              {commessa.codice ? `${commessa.codice} | ${commessa.titolo}` : commessa.titolo}
+            </h3>
+          </div>
+          <p className="mt-1 truncate text-sm text-[#D79D06]">
+            {commessa.posizione || commessa.cliente_nome || "Posizione non indicata"}
+          </p>
+          {commessa.cliente_nome && commessa.posizione && (
+            <p className="mt-1 truncate text-xs text-[#2B2F5E]/50">{commessa.cliente_nome}</p>
+          )}
+          {commessa.ultimaNota && (
+            <p className="mt-3 line-clamp-2 text-xs leading-5 text-[#2B2F5E]/55">
+              {commessa.dataUltimaNota ? `${new Date(commessa.dataUltimaNota).toLocaleDateString("it-IT")} · ` : ""}
+              {commessa.ultimaNota}
+            </p>
+          )}
+        </Link>
+        <div className="flex shrink-0 gap-1">
+          <Link href={`/commesse/${commessa.id}`} className="flex h-9 w-9 items-center justify-center rounded-lg text-[#2D80B3] hover:bg-[#5E9AD3]/10" title="Visualizza commessa" aria-label="Visualizza commessa">
+            <AppIcon name="eye" size={17} />
+          </Link>
+          <button type="button" onClick={() => onDelete(commessa)} className="flex h-9 w-9 items-center justify-center rounded-lg text-red-500 hover:bg-red-50" title="Elimina commessa" aria-label="Elimina commessa">
+            <AppIcon name="trash" size={16} />
+          </button>
+        </div>
+      </div>
+      <div className="mt-4 flex items-center justify-between gap-3 border-t border-[#2B2F5E]/8 pt-3">
+        <span className="rounded-full bg-[#F6F7FA] px-2.5 py-1 text-xs text-[#2B2F5E]/65">{commessa.tipo_commessa}</span>
+        <select value={commessa.priorita} onChange={(event) => onPriorityChange(event.target.value as Priorita)} className={`rounded-full border-0 px-2.5 py-1 text-xs font-semibold outline-none ${STILE_PRIORITA[commessa.priorita]}`} aria-label={`Priorità di ${commessa.titolo}`}>
+          {PRIORITA.map((priorita) => <option key={priorita}>{priorita}</option>)}
+        </select>
+      </div>
+    </article>
   );
 }
 

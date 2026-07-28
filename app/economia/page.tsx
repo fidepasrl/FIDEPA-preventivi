@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import AppIcon from "@/components/AppIcon";
 import EconomiaAccessGuard from "@/components/EconomiaAccessGuard";
@@ -44,9 +43,13 @@ type MovimentoReport = {
 type CostoSocieta = {
   id: string;
   descrizione: string;
+  categoria: string | null;
+  persona_id: string | null;
   importo: number;
   cassa: number;
   iva: number;
+  cassa_aliquota?: number;
+  iva_aliquota?: number;
   tipo: string;
   frequenza: string;
   data_riferimento: string | null;
@@ -54,6 +57,21 @@ type CostoSocieta = {
   data_fine: string | null;
   numero_mesi: number | null;
   attivo: boolean;
+  variazioni: VariazioneCostoSocieta[];
+};
+
+type PersonaCostoSocieta = {
+  id: string;
+  economia_cassa_attiva: boolean;
+  economia_cassa_aliquota: number | string;
+  economia_iva_attiva: boolean;
+  economia_iva_aliquota: number | string;
+};
+
+type VariazioneCostoSocieta = {
+  costo_societa_id: string;
+  data_decorrenza: string;
+  importo: number | string;
 };
 
 function getRelazioneSingola<T>(valore: RelazioneSupabase<T>) {
@@ -110,7 +128,7 @@ export default function EconomiaPage() {
     setCaricamento(true);
     setErrore("");
 
-    const [commesseRes, costiRes] = await Promise.all([
+    const [commesseRes, costiRes, personaleRes, variazioniCostiRes] = await Promise.all([
       supabase
         .from("economia_commesse")
         .select(
@@ -136,12 +154,28 @@ export default function EconomiaPage() {
         .from("economia_costi_societa")
         .select("*")
         .order("created_at", { ascending: false }),
+      supabase
+        .from("personale")
+        .select(
+          "id, economia_cassa_attiva, economia_cassa_aliquota, economia_iva_attiva, economia_iva_aliquota"
+        ),
+      supabase
+        .from("economia_costi_societa_variazioni")
+        .select("costo_societa_id, data_decorrenza, importo")
+        .order("data_decorrenza"),
     ]);
 
-    if (commesseRes.error || costiRes.error) {
+    if (
+      commesseRes.error ||
+      costiRes.error ||
+      personaleRes.error ||
+      variazioniCostiRes.error
+    ) {
       setErrore(
         commesseRes.error?.message ||
           costiRes.error?.message ||
+          personaleRes.error?.message ||
+          variazioniCostiRes.error?.message ||
           "Errore durante il caricamento dei dati economici."
       );
       setCaricamento(false);
@@ -177,8 +211,35 @@ export default function EconomiaPage() {
       return;
     }
 
+    const persone = (personaleRes.data || []) as PersonaCostoSocieta[];
+    const variazioni = (variazioniCostiRes.data || []) as VariazioneCostoSocieta[];
+    const costi = (costiRes.data || []) as Array<
+      Omit<CostoSocieta, "variazioni">
+    >;
     setMovimenti((movimentiRes.data || []) as MovimentoReport[]);
-    setCostiSocieta((costiRes.data || []) as CostoSocieta[]);
+    setCostiSocieta(
+      costi.map((costo) => {
+        const persona = persone.find((item) => item.id === costo.persona_id);
+        return {
+          ...costo,
+          cassa_aliquota:
+            persona
+              ? persona.economia_cassa_attiva
+                ? Number(persona.economia_cassa_aliquota) || 0
+                : 0
+              : undefined,
+          iva_aliquota:
+            persona
+              ? persona.economia_iva_attiva
+                ? Number(persona.economia_iva_aliquota) || 0
+                : 0
+              : undefined,
+          variazioni: variazioni.filter(
+            (variazione) => variazione.costo_societa_id === costo.id
+          ),
+        };
+      })
+    );
     setCaricamento(false);
   }
 
@@ -191,6 +252,7 @@ export default function EconomiaPage() {
     // Il report iniziale deve essere caricato una sola volta all'apertura.
   }, []);
 
+  const reportPrevisionale = annoVisualizzato > annoCorrente;
   const riepilogo = useMemo(() => {
     const movimentiAnno = movimenti.filter(
       (movimento) => annoDaData(movimento.data_movimento) === annoVisualizzato
@@ -206,8 +268,13 @@ export default function EconomiaPage() {
       (movimento) =>
         movimento.direzione === "uscita" && !movimento.collaboratore_id
     );
+    const limiteCostiSocieta = reportPrevisionale
+      ? new Date(annoVisualizzato, 11, 31)
+      : new Date();
     const movimentiSocieta = costiSocieta
-      .flatMap((costo) => movimentiCostoSocietaMaturati(costo))
+      .flatMap((costo) =>
+        movimentiCostoSocietaMaturati(costo, limiteCostiSocieta)
+      )
       .filter(
         (movimento) => annoDaData(movimento.dataPagamento) === annoVisualizzato
       );
@@ -226,7 +293,7 @@ export default function EconomiaPage() {
         totale + componenteFiscaleMovimento(movimento, "iva"),
       0
     );
-    const costiCollaboratori = usciteCollaboratori.reduce(
+    const costiCollaboratoriCommesse = usciteCollaboratori.reduce(
       (totale, movimento) => totale + imponibileMovimento(movimento),
       0
     );
@@ -261,7 +328,8 @@ export default function EconomiaPage() {
       0
     );
     const speseTotali = costiProgetto + speseSocieta;
-    const utilePrevisto = guadagni - costiCollaboratori - speseTotali;
+    const utilePrevisto =
+      guadagni - costiCollaboratoriCommesse - speseTotali;
     const ivaDaVersare =
       ivaRicavi - ivaCostiMovimenti - ivaCostiSocieta;
     const cassaDaVersare =
@@ -279,27 +347,34 @@ export default function EconomiaPage() {
       ires,
       irap,
       guadagnoNetto,
-      costiCollaboratori,
+      costiCollaboratori: costiCollaboratoriCommesse,
       speseTotali,
     };
-  }, [annoVisualizzato, costiSocieta, movimenti]);
+  }, [annoVisualizzato, costiSocieta, movimenti, reportPrevisionale]);
 
-  const anniMovimentiDisponibili = movimenti.map((movimento) =>
-    annoDaData(movimento.data_movimento)
-  );
-  const anniCostiDisponibili = costiSocieta.flatMap((costo) =>
-    movimentiCostoSocietaMaturati(costo).map((movimento) =>
-      annoDaData(movimento.dataPagamento)
-    )
-  );
-  const anniDisponibili = Array.from(
-    new Set([
+  const anniDisponibili = useMemo(() => {
+    const anni = new Set<number>([
       annoCorrente,
       annoVisualizzato,
-      ...anniMovimentiDisponibili,
-      ...anniCostiDisponibili,
-    ])
-  ).sort((a, b) => b - a);
+      ...movimenti.map((movimento) => annoDaData(movimento.data_movimento)),
+    ]);
+    for (let anno = annoCorrente - 5; anno <= annoCorrente + 5; anno += 1) {
+      anni.add(anno);
+    }
+    costiSocieta.forEach((costo) => {
+      [costo.data_riferimento, costo.data_inizio, costo.data_fine].forEach(
+        (value) => {
+          const anno = Number(value?.slice(0, 4));
+          if (anno >= 2000 && anno <= 2100) anni.add(anno);
+        }
+      );
+      costo.variazioni.forEach((variazione) => {
+        const anno = annoDaData(variazione.data_decorrenza);
+        if (anno >= 2000 && anno <= 2100) anni.add(anno);
+      });
+    });
+    return [...anni].sort((a, b) => b - a);
+  }, [annoCorrente, annoVisualizzato, costiSocieta, movimenti]);
 
   return (
     <LayoutApp>
@@ -309,7 +384,9 @@ export default function EconomiaPage() {
             <div>
               <h2 className="page-title">Gestione Economica</h2>
               <p className="text-[15px] text-[#D79D06] mt-1">
-                Report degli incassi e delle spese effettivamente registrati
+                {reportPrevisionale
+                  ? "Report previsionale dei costi societari programmati"
+                  : "Report degli incassi e delle spese effettivamente registrati"}
               </p>
             </div>
 
@@ -346,20 +423,6 @@ export default function EconomiaPage() {
                   ›
                 </button>
               </div>
-              <Link
-                href="/economia/commesse"
-                className="inline-flex items-center gap-2 rounded-xl bg-[#64B445] px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#5AA03E]"
-              >
-                <AppIcon name="briefcase" size={17} />
-                Commesse
-              </Link>
-              <Link
-                href="/economia/costi"
-                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-[#2B2F5E] shadow-sm hover:bg-[#F2F2F2]"
-              >
-                <AppIcon name="wallet" size={17} />
-                Costi società
-              </Link>
             </div>
           </div>
 
@@ -382,33 +445,49 @@ export default function EconomiaPage() {
                   icon="users"
                   label="Costi collaboratori"
                   value={formattaEuro(riepilogo.costiCollaboratori)}
-                  help="Pagamenti già effettuati, al netto di Cassa e IVA"
+                  help="Pagamenti dei collaboratori relativi alle commesse, al netto di Cassa e IVA"
                 />
                 <Kpi
                   icon="wallet"
-                  label={`Spese totali ${annoVisualizzato}`}
+                  label={`${reportPrevisionale ? "Spese previste" : "Spese totali"} ${annoVisualizzato}`}
                   value={formattaEuro(riepilogo.speseTotali)}
-                  help="Spese di progetto e societarie già sostenute"
+                  help={
+                    reportPrevisionale
+                      ? "Costi societari programmati nella scheda Costi società"
+                      : "Spese di progetto e societarie già sostenute"
+                  }
                 />
                 <Kpi
                   icon="wallet"
-                  label="Cassa da versare"
+                  label={reportPrevisionale ? "Saldo Cassa previsto" : "Cassa da versare"}
                   value={formattaEuro(riepilogo.cassaDaVersare)}
-                  help="Cassa già incassata meno Cassa già pagata"
+                  help={
+                    reportPrevisionale
+                      ? "Cassa prevista sui costi societari dell'anno"
+                      : "Cassa già incassata meno Cassa già pagata"
+                  }
                   danger={riepilogo.cassaDaVersare < 0}
                 />
                 <Kpi
                   icon="wallet"
-                  label="IVA da versare"
+                  label={reportPrevisionale ? "Saldo IVA previsto" : "IVA da versare"}
                   value={formattaEuro(riepilogo.ivaDaVersare)}
-                  help="IVA già incassata meno IVA già pagata"
+                  help={
+                    reportPrevisionale
+                      ? "IVA prevista sui costi societari dell'anno"
+                      : "IVA già incassata meno IVA già pagata"
+                  }
                   danger={riepilogo.ivaDaVersare < 0}
                 />
                 <Kpi
                   icon="chartBar"
-                  label={`Utile realizzato ${annoVisualizzato}`}
+                  label={`${reportPrevisionale ? "Risultato previsto" : "Utile realizzato"} ${annoVisualizzato}`}
                   value={formattaEuro(riepilogo.utilePrevisto)}
-                  help="Incassi netti meno le spese effettivamente sostenute"
+                  help={
+                    reportPrevisionale
+                      ? "Incassi registrati meno i costi societari previsti"
+                      : "Incassi netti meno le spese effettivamente sostenute"
+                  }
                   danger={riepilogo.utilePrevisto < 0}
                 />
                 <Kpi
@@ -425,9 +504,9 @@ export default function EconomiaPage() {
                 />
                 <Kpi
                   icon="euro"
-                  label={`Guadagno netto realizzato ${annoVisualizzato}`}
+                  label={`${reportPrevisionale ? "Guadagno netto previsto" : "Guadagno netto realizzato"} ${annoVisualizzato}`}
                   value={formattaEuro(riepilogo.guadagnoNetto)}
-                  help="Utile realizzato al netto di IRES e IRAP"
+                  help={`${reportPrevisionale ? "Risultato previsto" : "Utile realizzato"} al netto di IRES e IRAP`}
                   tone={riepilogo.guadagnoNetto < 0 ? "danger" : "success"}
                 />
               </section>

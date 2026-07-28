@@ -20,6 +20,7 @@ import type {
   DocumentoCollaboratore,
   MovimentoFinanziario,
   PersonaEconomica,
+  ProfessionistaEconomico,
   PreventivoEconomico,
   ProfiloFiscale,
   RiepilogoEconomico,
@@ -65,10 +66,19 @@ async function apriAllegato(percorso: string) {
   }
 }
 
-function nomeCollaboratore(item: CollaboratoreAssegnato, personale: PersonaEconomica[]) {
+function nomeCollaboratore(
+  item: CollaboratoreAssegnato,
+  personale: PersonaEconomica[],
+  professionisti: ProfessionistaEconomico[] = []
+) {
+  const professionista = professionisti.find(
+    (voce) => voce.id === item.professionista_id
+  );
   return item.tipo === "personale"
     ? personale.find((persona) => persona.id === item.persona_id)?.nome || "Personale interno"
-    : item.collaboratore_esterno_nome || "Collaboratore esterno";
+    : professionista
+      ? `${professionista.cognome || ""} ${professionista.nome || ""}`.trim()
+      : item.collaboratore_esterno_nome || "Collaboratore esterno";
 }
 
 function importoAllocato(movimentoId: string, allocazioni: AllocazioneMovimento[]) {
@@ -349,6 +359,7 @@ export function ReceiptsSection({
 export function CollaboratorsCostsSection({
   scheda,
   personale,
+  professionisti,
   profili,
   collaboratori,
   documentiCollaboratori,
@@ -366,6 +377,7 @@ export function CollaboratorsCostsSection({
 }: {
   scheda: SchedaEconomica;
   personale: PersonaEconomica[];
+  professionisti: ProfessionistaEconomico[];
   profili: ProfiloFiscale[];
   collaboratori: CollaboratoreAssegnato[];
   documentiCollaboratori: DocumentoCollaboratore[];
@@ -457,7 +469,7 @@ export function CollaboratorsCostsSection({
           const compensoPagato = sommaImporti(righePagamento.map(({ movimento, documento }) => documento?.imponibile ?? movimento.importo));
           const oneriFiscali = sommaImporti(righePagamento.map(({ documento }) => documento ? parseImporto(documento.cassa) + parseImporto(documento.iva) : 0));
           const residuo = parseImporto(item.compenso) - compensoPagato;
-          return <details key={item.id} className="group rounded-2xl border border-gray-100 bg-[#F8F9FB]"><summary className="grid cursor-pointer list-none grid-cols-1 items-center gap-3 p-4 lg:grid-cols-[minmax(180px,1.5fr)_repeat(4,minmax(105px,1fr))_auto]"><div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#5E9AD3]/12 text-[#2D80B3]"><AppIcon name="user" size={17} /></span><div><p className="font-semibold text-[#2B2F5E]">{nomeCollaboratore(item, personale)}</p><p className="text-xs text-gray-500">{item.tipo === "personale" ? "Personale interno" : "Collaboratore esterno"}</p></div></div><MiniValue label="Concordato" value={parseImporto(item.compenso)} /><MiniValue label="Compenso pagato" value={compensoPagato} /><MiniValue label="Cassa e IVA" value={oneriFiscali} /><MiniValue label="Residuo" value={residuo} danger={residuo < 0} /><AppIcon name="chevronDown" size={17} className="justify-self-end transition group-open:rotate-180" /></summary><div className="border-t border-gray-100 bg-white p-4">
+          return <details key={item.id} className="group rounded-2xl border border-gray-100 bg-[#F8F9FB]"><summary className="grid cursor-pointer list-none grid-cols-1 items-center gap-3 p-4 lg:grid-cols-[minmax(180px,1.5fr)_repeat(4,minmax(105px,1fr))_auto]"><div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#5E9AD3]/12 text-[#2D80B3]"><AppIcon name="user" size={17} /></span><div><p className="font-semibold text-[#2B2F5E]">{nomeCollaboratore(item, personale, professionisti)}</p><p className="text-xs text-gray-500">{item.tipo === "personale" ? "Personale interno" : "Collaboratore esterno"}</p></div></div><MiniValue label="Concordato" value={parseImporto(item.compenso)} /><MiniValue label="Compenso pagato" value={compensoPagato} /><MiniValue label="Cassa e IVA" value={oneriFiscali} /><MiniValue label="Residuo" value={residuo} danger={residuo < 0} /><AppIcon name="chevronDown" size={17} className="justify-self-end transition group-open:rotate-180" /></summary><div className="border-t border-gray-100 bg-white p-4">
             <div className="flex flex-wrap justify-between gap-3"><div className="flex flex-wrap gap-2"><SecondaryButton onClick={() => setCollaboratoreAperto(item)}>Modifica</SecondaryButton><PrimaryButton onClick={() => setPagamentoAperto(item)} icon="euro">Registra pagamento</PrimaryButton></div><SecondaryButton danger onClick={async () => { if (window.confirm("Archiviare il collaboratore mantenendo i pagamenti storici?")) await onArchiveCollaborator(item.id); }}>Archivia</SecondaryButton></div>
             <div className="mt-4"><h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-400">Pagamenti</h4>{righePagamento.length === 0 ? <EmptyState>Nessun pagamento effettuato.</EmptyState> : <div className="space-y-2">{righePagamento.map(({ movimento, documento }) => { const conFattura = documento?.tipologia === "fattura"; return <div key={movimento.id} className="grid grid-cols-1 items-center gap-3 rounded-xl border border-gray-100 p-3 md:grid-cols-[110px_minmax(0,1fr)_repeat(4,minmax(90px,auto))_auto]"><div><p className="text-sm font-semibold text-[#2B2F5E]">{dataIt(movimento.data_movimento)}</p><StatusBadge value={conFattura ? "fattura" : "contanti"} /></div><div className="min-w-0"><p className="truncate text-sm font-medium text-[#2B2F5E]">{movimento.causale}</p>{conFattura && documento?.numero ? <p className="text-xs text-gray-500">Fattura {documento.numero}</p> : null}</div><MiniValue label="Compenso" value={parseImporto(documento?.imponibile ?? movimento.importo)} /><MiniValue label="Cassa" value={parseImporto(documento?.cassa)} /><MiniValue label="IVA" value={parseImporto(documento?.iva)} /><MiniValue label="Totale" value={parseImporto(movimento.importo)} /><button type="button" onClick={async () => { if (window.confirm("Annullare questo pagamento?")) await onCancelPayment(movimento.id, documento?.id || null); }} className="rounded-lg px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 cursor-pointer">Annulla</button></div>; })}</div>}</div>
           </div></details>;
@@ -468,8 +480,8 @@ export function CollaboratorsCostsSection({
         {costi.length === 0 ? <EmptyState>Nessun altro costo previsto.</EmptyState> : <div className="grid grid-cols-1 gap-3 md:grid-cols-2">{costi.map((item) => <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl bg-[#F8F9FB] p-3"><div><p className="text-sm font-semibold text-[#2B2F5E]">{item.descrizione}</p><p className="text-xs text-gray-500">Imponibile {formattaEuro(item.importo)} · Cassa {formattaEuro(item.cassa)} · IVA {formattaEuro(item.iva)}</p></div><div className="flex gap-1"><button type="button" onClick={() => setCostoAperto(item)} className="rounded-lg px-2 py-1 text-xs font-semibold text-[#2D80B3] hover:bg-[#E8F2FA] cursor-pointer">Modifica</button><button type="button" onClick={async () => { if (window.confirm("Archiviare questo costo?")) await onArchiveCost(item.id); }} className="rounded-lg px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 cursor-pointer">Archivia</button></div></div>)}</div>}
       </EconomicCard>
 
-      {collaboratoreAperto ? <CollaboratorModal economiaId={scheda.id} personale={personale} profili={profili} collaboratore={collaboratoreAperto === "nuovo" ? null : collaboratoreAperto} valoreCommessa={valoreCommessa} quotaFidepa={quotaFidepa} onClose={() => setCollaboratoreAperto(null)} onSave={onSaveCollaborator} /> : null}
-      {pagamentoAperto ? <CollaboratorPaymentModal economiaId={scheda.id} collaboratore={pagamentoAperto} nomeCollaboratore={nomeCollaboratore(pagamentoAperto, personale)} persona={personale.find((item) => item.id === pagamentoAperto.persona_id)} profili={profili} onClose={() => setPagamentoAperto(null)} onSave={onSavePayment} /> : null}
+      {collaboratoreAperto ? <CollaboratorModal economiaId={scheda.id} personale={personale} professionisti={professionisti} profili={profili} collaboratore={collaboratoreAperto === "nuovo" ? null : collaboratoreAperto} valoreCommessa={valoreCommessa} quotaFidepa={quotaFidepa} onClose={() => setCollaboratoreAperto(null)} onSave={onSaveCollaborator} /> : null}
+      {pagamentoAperto ? <CollaboratorPaymentModal economiaId={scheda.id} collaboratore={pagamentoAperto} nomeCollaboratore={nomeCollaboratore(pagamentoAperto, personale, professionisti)} persona={personale.find((item) => item.id === pagamentoAperto.persona_id)} onClose={() => setPagamentoAperto(null)} onSave={onSavePayment} /> : null}
       {costoAperto ? <ProjectCostModal economiaId={scheda.id} costo={costoAperto === "nuovo" ? null : costoAperto} onClose={() => setCostoAperto(null)} onSave={onSaveCost} /> : null}
     </div>
   );
