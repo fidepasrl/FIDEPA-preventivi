@@ -5,12 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import AppIcon from "@/components/AppIcon";
 import EconomiaAccessGuard from "@/components/EconomiaAccessGuard";
 import LayoutApp from "@/components/LayoutApp";
-import {
-  cassaSocietaAnnuale,
-  costoSocietaAnnualeNetto,
-  costoSocietaMaturatoNetto,
-  ivaSocietaAnnuale,
-} from "@/lib/economia";
+import { movimentiCostoSocietaMaturati } from "@/lib/economia";
 import { formattaEuro } from "@/lib/importi";
 import { supabase } from "@/lib/supabase";
 
@@ -26,37 +21,24 @@ type CommessaInfo = {
 
 type EconomiaCommessaRow = {
   id: string;
-  anno: number;
-  compenso: number;
-  trattenuta_percentuale: number;
-  cassa: number;
-  iva: number;
+  soggetto_fiscale_id: string | null;
   fatturato_come_ing_pascale: boolean | null;
-  created_at: string;
   commesse: RelazioneSupabase<CommessaInfo>;
-  economia_commesse_collaboratori: CollaboratoreReport[] | null;
-  economia_commesse_costi: CostoProgettoReport[] | null;
+  economia_soggetti_fiscali: RelazioneSupabase<{ nome: string }>;
 };
 
-type SalReport = {
+type MovimentoReport = {
+  id: string;
+  economia_commessa_id: string;
+  direzione: "entrata" | "uscita";
+  collaboratore_id: string | null;
+  costo_progetto_id: string | null;
+  data_movimento: string;
   importo: number;
-  cassa: number;
-  iva: number;
-  data_pagamento: string | null;
-};
-
-type CollaboratoreReport = {
-  compenso: number;
-  cassa: number;
-  iva: number;
-  economia_collaboratori_sal: SalReport[] | null;
-};
-
-type CostoProgettoReport = {
-  importo: number;
-  cassa: number;
-  iva: number;
-  economia_costi_progetto_sal: SalReport[] | null;
+  imponibile: number | null;
+  cassa: number | null;
+  iva: number | null;
+  legacy_dettaglio: Record<string, unknown> | null;
 };
 
 type CostoSocieta = {
@@ -74,109 +56,52 @@ type CostoSocieta = {
   attivo: boolean;
 };
 
-type RigaReport = {
-  id: string;
-  titolo: string;
-  anno: number;
-  compenso: number;
-  trattenutaFidepa: number;
-  cassaRicavi: number;
-  ivaRicavi: number;
-  movimentiCollaboratori: MovimentoEconomico[];
-  movimentiCostiProgetto: MovimentoEconomico[];
-};
-
-type MovimentoEconomico = {
-  anno: number;
-  importo: number;
-  cassa: number;
-  iva: number;
-};
-
 function getRelazioneSingola<T>(valore: RelazioneSupabase<T>) {
   if (Array.isArray(valore)) return valore[0] || null;
   return valore || null;
 }
 
-function annoDaData(value: string | null | undefined, fallback: number) {
-  if (!value) return fallback;
-
-  const data = new Date(value);
-  return Number.isNaN(data.getTime()) ? fallback : data.getFullYear();
+function oggiLocaleIso() {
+  const oggi = new Date();
+  const offset = oggi.getTimezoneOffset() * 60_000;
+  return new Date(oggi.getTime() - offset).toISOString().slice(0, 10);
 }
 
-function movimentiCollaboratore(
-  collaboratore: CollaboratoreReport,
-  annoFallback: number
-): MovimentoEconomico[] {
-  const sal = collaboratore.economia_collaboratori_sal || [];
-
-  if (sal.length > 0) {
-    return sal.map((riga) => ({
-      anno: annoDaData(riga.data_pagamento, annoFallback),
-      importo: Number(riga.importo || 0),
-      cassa: Number(riga.cassa || 0),
-      iva: Number(riga.iva || 0),
-    }));
-  }
-
-  return [
-    {
-      anno: annoFallback,
-      importo: Number(collaboratore.compenso || 0),
-      cassa: Number(collaboratore.cassa || 0),
-      iva: Number(collaboratore.iva || 0),
-    },
-  ];
+function annoDaData(value: string) {
+  return Number(value.slice(0, 4));
 }
 
-function movimentiCostoProgetto(
-  costo: CostoProgettoReport,
-  annoFallback: number
-): MovimentoEconomico[] {
-  const sal = costo.economia_costi_progetto_sal || [];
-
-  if (sal.length > 0) {
-    return sal.map((riga) => ({
-      anno: annoDaData(riga.data_pagamento, annoFallback),
-      importo: Number(riga.importo || 0),
-      cassa: Number(riga.cassa || 0),
-      iva: Number(riga.iva || 0),
-    }));
-  }
-
-  return [
-    {
-      anno: annoFallback,
-      importo: Number(costo.importo || 0),
-      cassa: Number(costo.cassa || 0),
-      iva: Number(costo.iva || 0),
-    },
-  ];
+function numeroLegacy(movimento: MovimentoReport, campo: "imponibile" | "cassa" | "iva") {
+  const valore = movimento.legacy_dettaglio?.[campo];
+  return typeof valore === "number" || typeof valore === "string"
+    ? Number(valore) || 0
+    : 0;
 }
 
-function sommaMovimenti(movimenti: MovimentoEconomico[], anno: number) {
-  return movimenti
-    .filter((movimento) => movimento.anno === anno)
-    .reduce((totale, movimento) => totale + movimento.importo, 0);
+function imponibileMovimento(movimento: MovimentoReport) {
+  if (movimento.imponibile != null) return Number(movimento.imponibile || 0);
+  const imponibileLegacy = numeroLegacy(movimento, "imponibile");
+  if (imponibileLegacy > 0) return imponibileLegacy;
+  return Math.max(
+    0,
+    Number(movimento.importo || 0) -
+      componenteFiscaleMovimento(movimento, "cassa") -
+      componenteFiscaleMovimento(movimento, "iva")
+  );
 }
 
-function sommaIvaMovimenti(movimenti: MovimentoEconomico[], anno: number) {
-  return movimenti
-    .filter((movimento) => movimento.anno === anno)
-    .reduce((totale, movimento) => totale + movimento.iva, 0);
-}
-
-function sommaCassaMovimenti(movimenti: MovimentoEconomico[], anno: number) {
-  return movimenti
-    .filter((movimento) => movimento.anno === anno)
-    .reduce((totale, movimento) => totale + movimento.cassa, 0);
+function componenteFiscaleMovimento(
+  movimento: MovimentoReport,
+  campo: "cassa" | "iva"
+) {
+  if (movimento.imponibile != null) return Number(movimento[campo] || 0);
+  return numeroLegacy(movimento, campo) || Number(movimento[campo] || 0);
 }
 
 export default function EconomiaPage() {
   const annoCorrente = new Date().getFullYear();
   const [annoVisualizzato, setAnnoVisualizzato] = useState(annoCorrente);
-  const [righe, setRighe] = useState<RigaReport[]>([]);
+  const [movimenti, setMovimenti] = useState<MovimentoReport[]>([]);
   const [costiSocieta, setCostiSocieta] = useState<CostoSocieta[]>([]);
   const [caricamento, setCaricamento] = useState(true);
   const [errore, setErrore] = useState("");
@@ -191,13 +116,8 @@ export default function EconomiaPage() {
         .select(
           `
           id,
-          anno,
-          compenso,
-          trattenuta_percentuale,
-          cassa,
-          iva,
+          soggetto_fiscale_id,
           fatturato_come_ing_pascale,
-          created_at,
           commesse!inner (
             id,
             titolo,
@@ -205,33 +125,13 @@ export default function EconomiaPage() {
             data_inizio,
             data_fine
           ),
-          economia_commesse_collaboratori (
-            compenso,
-            cassa,
-            iva,
-            economia_collaboratori_sal (
-              importo,
-              cassa,
-              iva,
-              data_pagamento
-            )
-          ),
-          economia_commesse_costi (
-            importo,
-            cassa,
-            iva,
-            economia_costi_progetto_sal (
-              importo,
-              cassa,
-              iva,
-              data_pagamento
-            )
+          economia_soggetti_fiscali (
+            nome
           )
         `
         )
         .eq("commesse.lavoro_privato_non_fidepa", false)
-        .order("anno", { ascending: false })
-        .order("created_at", { ascending: false }),
+        .is("deleted_at", null),
       supabase
         .from("economia_costi_societa")
         .select("*")
@@ -248,38 +148,36 @@ export default function EconomiaPage() {
       return;
     }
 
-    const righeReport = ((commesseRes.data || []) as EconomiaCommessaRow[])
-      .filter((item) => !item.fatturato_come_ing_pascale)
-      .map((item) => {
-        const commessa = getRelazioneSingola(item.commesse);
-        const annoRiga = Number(item.anno || annoCorrente);
-        const movimentiCollaboratori = (
-          item.economia_commesse_collaboratori || []
-        ).flatMap((collaboratore) =>
-          movimentiCollaboratore(collaboratore, annoRiga)
+    const schedeFidepa = ((commesseRes.data || []) as EconomiaCommessaRow[])
+      .filter((item) => {
+        const soggetto = getRelazioneSingola(item.economia_soggetti_fiscali);
+        return (
+          !item.fatturato_come_ing_pascale &&
+          !soggetto?.nome.toLocaleLowerCase("it-IT").includes("pascale")
         );
-        const movimentiCostiProgetto = (
-          item.economia_commesse_costi || []
-        ).flatMap((costo) => movimentiCostoProgetto(costo, annoRiga));
-        const compenso = Number(item.compenso || 0);
-        const trattenutaPercentuale = Number(item.trattenuta_percentuale || 0);
-
-        return {
-          id: item.id,
-          anno: annoRiga,
-          titolo: commessa?.codice
-            ? `${commessa.codice} | ${commessa.titolo}`
-            : commessa?.titolo || "Commessa",
-          compenso,
-          trattenutaFidepa: (compenso * trattenutaPercentuale) / 100,
-          cassaRicavi: Number(item.cassa || 0),
-          ivaRicavi: Number(item.iva || 0),
-          movimentiCollaboratori,
-          movimentiCostiProgetto,
-        };
       });
+    const schedeIds = schedeFidepa.map((item) => item.id);
+    const oggi = oggiLocaleIso();
+    const movimentiRes = schedeIds.length
+      ? await supabase
+          .from("economia_movimenti_finanziari")
+          .select(
+            "id, economia_commessa_id, direzione, collaboratore_id, costo_progetto_id, data_movimento, importo, imponibile, cassa, iva, legacy_dettaglio"
+          )
+          .in("economia_commessa_id", schedeIds)
+          .lte("data_movimento", oggi)
+          .neq("stato_riconciliazione", "annullato")
+          .is("deleted_at", null)
+          .order("data_movimento", { ascending: false })
+      : { data: [], error: null };
 
-    setRighe(righeReport);
+    if (movimentiRes.error) {
+      setErrore(movimentiRes.error.message);
+      setCaricamento(false);
+      return;
+    }
+
+    setMovimenti((movimentiRes.data || []) as MovimentoReport[]);
     setCostiSocieta((costiRes.data || []) as CostoSocieta[]);
     setCaricamento(false);
   }
@@ -291,130 +189,115 @@ export default function EconomiaPage() {
 
     void caricaReportIniziale();
     // Il report iniziale deve essere caricato una sola volta all'apertura.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const riepilogo = useMemo(() => {
-    const righeAnno = righe.filter((riga) => riga.anno === annoVisualizzato);
-    const guadagni = righeAnno.reduce((totale, riga) => totale + riga.compenso, 0);
-    const trattenuteFidepa = righeAnno.reduce(
-      (totale, riga) => totale + riga.trattenutaFidepa,
+    const movimentiAnno = movimenti.filter(
+      (movimento) => annoDaData(movimento.data_movimento) === annoVisualizzato
+    );
+    const entrate = movimentiAnno.filter(
+      (movimento) => movimento.direzione === "entrata"
+    );
+    const usciteCollaboratori = movimentiAnno.filter(
+      (movimento) =>
+        movimento.direzione === "uscita" && Boolean(movimento.collaboratore_id)
+    );
+    const usciteProgetto = movimentiAnno.filter(
+      (movimento) =>
+        movimento.direzione === "uscita" && !movimento.collaboratore_id
+    );
+    const movimentiSocieta = costiSocieta
+      .flatMap((costo) => movimentiCostoSocietaMaturati(costo))
+      .filter(
+        (movimento) => annoDaData(movimento.dataPagamento) === annoVisualizzato
+      );
+
+    const guadagni = entrate.reduce(
+      (totale, movimento) => totale + imponibileMovimento(movimento),
       0
     );
-    const cassaRicavi = righeAnno.reduce(
-      (totale, riga) => totale + riga.cassaRicavi,
+    const cassaRicavi = entrate.reduce(
+      (totale, movimento) =>
+        totale + componenteFiscaleMovimento(movimento, "cassa"),
       0
     );
-    const ivaRicavi = righeAnno.reduce(
-      (totale, riga) => totale + riga.ivaRicavi,
+    const ivaRicavi = entrate.reduce(
+      (totale, movimento) =>
+        totale + componenteFiscaleMovimento(movimento, "iva"),
       0
     );
-    const ivaCostiProgetto = righe.reduce(
-      (totale, riga) =>
-        totale + sommaIvaMovimenti(riga.movimentiCostiProgetto, annoVisualizzato),
+    const costiCollaboratori = usciteCollaboratori.reduce(
+      (totale, movimento) => totale + imponibileMovimento(movimento),
       0
     );
-    const costiCollaboratori = righe.reduce(
-      (totale, riga) =>
-        totale + sommaMovimenti(riga.movimentiCollaboratori, annoVisualizzato),
+    const costiProgetto = usciteProgetto.reduce(
+      (totale, movimento) => totale + imponibileMovimento(movimento),
       0
     );
-    const ivaCostiCollaboratori = righe.reduce(
-      (totale, riga) =>
-        totale + sommaIvaMovimenti(riga.movimentiCollaboratori, annoVisualizzato),
+    const cassaCostiMovimenti = movimentiAnno
+      .filter((movimento) => movimento.direzione === "uscita")
+      .reduce(
+        (totale, movimento) =>
+          totale + componenteFiscaleMovimento(movimento, "cassa"),
+        0
+      );
+    const ivaCostiMovimenti = movimentiAnno
+      .filter((movimento) => movimento.direzione === "uscita")
+      .reduce(
+        (totale, movimento) =>
+          totale + componenteFiscaleMovimento(movimento, "iva"),
+        0
+      );
+    const speseSocieta = movimentiSocieta.reduce(
+      (totale, movimento) => totale + movimento.importo,
       0
     );
-    const cassaCostiCollaboratori = righe.reduce(
-      (totale, riga) =>
-        totale + sommaCassaMovimenti(riga.movimentiCollaboratori, annoVisualizzato),
+    const cassaCostiSocieta = movimentiSocieta.reduce(
+      (totale, movimento) => totale + movimento.cassa,
       0
     );
-    const costiProgetto = righe.reduce(
-      (totale, riga) =>
-        totale + sommaMovimenti(riga.movimentiCostiProgetto, annoVisualizzato),
+    const ivaCostiSocieta = movimentiSocieta.reduce(
+      (totale, movimento) => totale + movimento.iva,
       0
     );
-    const cassaCostiProgetto = righe.reduce(
-      (totale, riga) =>
-        totale + sommaCassaMovimenti(riga.movimentiCostiProgetto, annoVisualizzato),
-      0
-    );
-    const speseSocietaAnnue = costiSocieta.reduce(
-      (totale, costo) =>
-        totale + costoSocietaAnnualeNetto(costo, annoVisualizzato),
-      0
-    );
-    const speseSocietaMaturate = costiSocieta.reduce(
-      (totale, costo) =>
-        totale + costoSocietaMaturatoNetto(costo, annoVisualizzato),
-      0
-    );
-    const ivaCostiSocieta = costiSocieta.reduce(
-      (totale, costo) => totale + ivaSocietaAnnuale(costo, annoVisualizzato),
-      0
-    );
-    const cassaCostiSocieta = costiSocieta.reduce(
-      (totale, costo) => totale + cassaSocietaAnnuale(costo, annoVisualizzato),
-      0
-    );
-    const speseTotali = costiProgetto + speseSocietaAnnue;
-    const speseTotaliMaturate = costiProgetto + speseSocietaMaturate;
-    const margineCommesse = guadagni - costiCollaboratori - costiProgetto;
-    const risultatoPrevisto = guadagni - costiCollaboratori - speseTotali;
-    const risultatoMaturato =
-      guadagni - costiCollaboratori - speseTotaliMaturate;
+    const speseTotali = costiProgetto + speseSocieta;
+    const utilePrevisto = guadagni - costiCollaboratori - speseTotali;
     const ivaDaVersare =
-      ivaRicavi - ivaCostiCollaboratori - ivaCostiProgetto - ivaCostiSocieta;
+      ivaRicavi - ivaCostiMovimenti - ivaCostiSocieta;
     const cassaDaVersare =
-      cassaRicavi - cassaCostiCollaboratori - cassaCostiProgetto - cassaCostiSocieta;
-    const utilePrevisto = risultatoPrevisto;
-    const imponibileTasse = Math.max(0, risultatoPrevisto);
+      cassaRicavi - cassaCostiMovimenti - cassaCostiSocieta;
+    const imponibileTasse = Math.max(0, utilePrevisto);
     const ires = imponibileTasse * 0.24;
     const irap = imponibileTasse * 0.0497;
-    const tasseTotali = ires + irap;
-    const guadagnoNetto = utilePrevisto - tasseTotali;
+    const guadagnoNetto = utilePrevisto - ires - irap;
 
     return {
       guadagni,
-      trattenuteFidepa,
-      cassaRicavi,
-      ivaRicavi,
-      cassaCostiSocieta,
-      cassaCostiCollaboratori,
-      cassaCostiProgetto,
       cassaDaVersare,
-      ivaCostiCollaboratori,
-      ivaCostiProgetto,
-      ivaCostiSocieta,
       ivaDaVersare,
       utilePrevisto,
       ires,
       irap,
-      tasseTotali,
       guadagnoNetto,
       costiCollaboratori,
-      costiProgetto,
-      speseSocietaAnnue,
-      speseSocietaMaturate,
       speseTotali,
-      speseTotaliMaturate,
-      margineCommesse,
-      risultatoPrevisto,
-      risultatoMaturato,
-      marginePercentuale: guadagni > 0 ? (margineCommesse / guadagni) * 100 : 0,
     };
-  }, [annoVisualizzato, costiSocieta, righe]);
+  }, [annoVisualizzato, costiSocieta, movimenti]);
 
-  const anniMovimentiDisponibili = righe.flatMap((riga) => [
-    ...riga.movimentiCollaboratori.map((movimento) => movimento.anno),
-    ...riga.movimentiCostiProgetto.map((movimento) => movimento.anno),
-  ]);
+  const anniMovimentiDisponibili = movimenti.map((movimento) =>
+    annoDaData(movimento.data_movimento)
+  );
+  const anniCostiDisponibili = costiSocieta.flatMap((costo) =>
+    movimentiCostoSocietaMaturati(costo).map((movimento) =>
+      annoDaData(movimento.dataPagamento)
+    )
+  );
   const anniDisponibili = Array.from(
     new Set([
       annoCorrente,
       annoVisualizzato,
-      ...righe.map((riga) => riga.anno),
       ...anniMovimentiDisponibili,
+      ...anniCostiDisponibili,
     ])
   ).sort((a, b) => b - a);
 
@@ -426,7 +309,7 @@ export default function EconomiaPage() {
             <div>
               <h2 className="page-title">Gestione Economica</h2>
               <p className="text-[15px] text-[#D79D06] mt-1">
-                Report margini, costi e proiezione finanziaria
+                Report degli incassi e delle spese effettivamente registrati
               </p>
             </div>
 
@@ -491,48 +374,48 @@ export default function EconomiaPage() {
               <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <Kpi
                   icon="euro"
-                  label={`Totale netto commesse ${annoVisualizzato}`}
+                  label={`Incassi netti ${annoVisualizzato}`}
                   value={formattaEuro(riepilogo.guadagni)}
-                  help="Compensi netti inseriti per l'anno"
+                  help="Solo incassi già avvenuti entro la data odierna"
                 />
                 <Kpi
                   icon="users"
                   label="Costi collaboratori"
                   value={formattaEuro(riepilogo.costiCollaboratori)}
-                  help="Solo netto collaboratori, cassa e IVA escluse"
+                  help="Pagamenti già effettuati, al netto di Cassa e IVA"
                 />
                 <Kpi
                   icon="wallet"
                   label={`Spese totali ${annoVisualizzato}`}
                   value={formattaEuro(riepilogo.speseTotali)}
-                  help="Solo netto spese, cassa e IVA escluse"
+                  help="Spese di progetto e societarie già sostenute"
                 />
                 <Kpi
                   icon="wallet"
                   label="Cassa da versare"
                   value={formattaEuro(riepilogo.cassaDaVersare)}
-                  help="Cassa commesse meno cassa pagata"
+                  help="Cassa già incassata meno Cassa già pagata"
                   danger={riepilogo.cassaDaVersare < 0}
                 />
                 <Kpi
                   icon="wallet"
                   label="IVA da versare"
                   value={formattaEuro(riepilogo.ivaDaVersare)}
-                  help="IVA ricavi meno IVA su costi"
+                  help="IVA già incassata meno IVA già pagata"
                   danger={riepilogo.ivaDaVersare < 0}
                 />
                 <Kpi
                   icon="chartBar"
-                  label={`Previsione utile ${annoVisualizzato}`}
+                  label={`Utile realizzato ${annoVisualizzato}`}
                   value={formattaEuro(riepilogo.utilePrevisto)}
-                  help="Netto commesse meno collaboratori e spese"
+                  help="Incassi netti meno le spese effettivamente sostenute"
                   danger={riepilogo.utilePrevisto < 0}
                 />
                 <Kpi
                   icon="wallet"
                   label="IRES 24%"
                   value={formattaEuro(riepilogo.ires)}
-                  help="Calcolata sull'utile imponibile"
+                  help="Calcolata sull'utile realizzato imponibile"
                 />
                 <Kpi
                   icon="wallet"
@@ -542,9 +425,9 @@ export default function EconomiaPage() {
                 />
                 <Kpi
                   icon="euro"
-                  label={`Previsione guadagno ${annoVisualizzato}`}
+                  label={`Guadagno netto realizzato ${annoVisualizzato}`}
                   value={formattaEuro(riepilogo.guadagnoNetto)}
-                  help="Utile al netto di IRES e IRAP"
+                  help="Utile realizzato al netto di IRES e IRAP"
                   tone={riepilogo.guadagnoNetto < 0 ? "danger" : "success"}
                 />
               </section>

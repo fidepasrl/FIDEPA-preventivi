@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { usePathname } from "next/navigation";
+import AppIcon from "@/components/AppIcon";
 import { supabase } from "@/lib/supabase";
 
 export default function AppFeedbackButton() {
@@ -40,9 +41,9 @@ export default function AppFeedbackButton() {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-[9999]">
+    <div className="fixed bottom-0 right-3 z-40 flex flex-col items-end sm:right-6">
       {aperto && (
-        <div className="mb-3 w-80 bg-white border border-gray-200 shadow-2xl rounded-md p-4">
+        <div className="mb-2 w-[min(20rem,calc(100vw-1.5rem))] rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl">
           <div className="flex justify-between items-start mb-3">
             <h3 className="text-[17px] font-semibold text-[#2B2F5E]">
               Invia feedback
@@ -51,9 +52,10 @@ export default function AppFeedbackButton() {
             <button
               type="button"
               onClick={() => setAperto(false)}
-              className="text-xl text-gray-400 hover:text-[#2B2F5E] cursor-pointer"
+              className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-gray-400 hover:bg-[#F2F2F2] hover:text-[#2B2F5E]"
+              aria-label="Chiudi feedback"
             >
-              ×
+              <AppIcon name="x" size={17} />
             </button>
           </div>
 
@@ -85,9 +87,11 @@ export default function AppFeedbackButton() {
       <button
         type="button"
         onClick={() => setAperto((prev) => !prev)}
-        className="bg-[#0078D4] text-white px-4 py-2 rounded-md text-sm font-semibold shadow-lg hover:bg-[#106EBE] transition cursor-pointer flex items-center gap-2"
+        className="flex min-h-11 cursor-pointer items-center gap-2 rounded-t-xl rounded-b-none border border-b-0 border-white/20 bg-[#0078D4] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_-4px_14px_rgba(43,47,94,0.16)] hover:bg-[#106EBE]"
+        aria-expanded={aperto}
+        aria-label={aperto ? "Chiudi pannello feedback" : "Apri pannello feedback"}
       >
-        <span>◎</span>
+        <AppIcon name="message" size={17} />
         Feedback
       </button>
     </div>

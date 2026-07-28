@@ -26,7 +26,12 @@ export default function LayoutApp({
             onClose={() => setSidebarMobileAperta(false)}
           />
 
-          <main className="min-w-0 flex-1 min-h-[calc(100vh-4.5rem)] p-4 sm:p-5 xl:p-7 pb-28 overflow-x-hidden">
+          <main
+            className="min-w-0 flex-1 min-h-[calc(100vh-4.5rem)] p-4 sm:p-5 xl:p-7 overflow-x-hidden"
+            style={{
+              paddingBottom: "calc(6rem + env(safe-area-inset-bottom))",
+            }}
+          >
             {children}
           </main>
         </div>

@@ -14,6 +14,7 @@ type ImportoInputProps = {
   inputClassName?: string;
   compact?: boolean;
   placeholder?: string;
+  disabled?: boolean;
 };
 
 export default function ImportoInput({
@@ -23,6 +24,7 @@ export default function ImportoInput({
   inputClassName = "",
   compact = false,
   placeholder,
+  disabled = false,
 }: ImportoInputProps) {
   function handleChange(event: ChangeEvent<HTMLInputElement>) {
     onChange(formattaInputImporto(event.target.value));
@@ -48,7 +50,8 @@ export default function ImportoInput({
         onBlur={handleBlur}
         inputMode="decimal"
         placeholder={placeholder}
-        className={`w-full min-w-0 border border-gray-300 rounded-md bg-white outline-none focus:border-[#64B445] text-right ${
+        disabled={disabled}
+        className={`w-full min-w-0 border border-gray-300 rounded-md bg-white outline-none focus:border-[#64B445] text-right disabled:cursor-not-allowed disabled:bg-[#F2F2F2] disabled:text-gray-500 ${
           compact ? "pl-8 pr-3 py-2" : "pl-8 pr-3 py-3"
         } ${inputClassName}`}
       />

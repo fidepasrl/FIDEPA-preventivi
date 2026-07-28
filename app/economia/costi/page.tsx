@@ -1,16 +1,20 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import AppIcon from "@/components/AppIcon";
 import EconomiaAccessGuard from "@/components/EconomiaAccessGuard";
 import ImportoInput from "@/components/ImportoInput";
 import LayoutApp from "@/components/LayoutApp";
-import { costoSocietaAnnuale } from "@/lib/economia";
+import {
+  costoSocietaAnnuale,
+  costoSocietaAnnualeNetto,
+  movimentiCostoSocietaMaturati,
+} from "@/lib/economia";
 import { finalizzaInputImporto, formattaEuro, parseImporto } from "@/lib/importi";
 import { supabase } from "@/lib/supabase";
 
 type FrequenzaCosto = "Mensile" | "Annuale" | "Una tantum";
+type CostiTab = "fisse" | "una_tantum" | "riepilogo";
 
 type CostoSocieta = {
   id: string;
@@ -67,7 +71,8 @@ type CostoForm = ReturnType<typeof creaFormIniziale>;
 
 export default function EconomiaCostiPage() {
   const annoCorrente = new Date().getFullYear();
-  const [annoVisualizzato, setAnnoVisualizzato] = useState(annoCorrente);
+  const annoVisualizzato = annoCorrente;
+  const [tab, setTab] = useState<CostiTab>("fisse");
   const [costi, setCosti] = useState<CostoSocieta[]>([]);
   const [form, setForm] = useState<CostoForm>(() =>
     creaFormIniziale(annoCorrente)
@@ -75,15 +80,9 @@ export default function EconomiaCostiPage() {
   const [caricamento, setCaricamento] = useState(true);
   const [salvataggio, setSalvataggio] = useState(false);
   const [errore, setErrore] = useState("");
+  const [formAperto, setFormAperto] = useState(false);
 
-  useEffect(() => {
-    caricaCosti();
-  }, []);
-
-  async function caricaCosti() {
-    setCaricamento(true);
-    setErrore("");
-
+  const caricaCosti = useCallback(async () => {
     const { data, error } = await supabase
       .from("economia_costi_societa")
       .select("*")
@@ -98,44 +97,44 @@ export default function EconomiaCostiPage() {
 
     setCosti((data || []) as CostoSocieta[]);
     setCaricamento(false);
-  }
+  }, []);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => void caricaCosti(), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [caricaCosti]);
 
   const riepilogo = useMemo(() => {
     const costiAttivi = costi.filter((item) => item.attivo);
-    const mensile = costiAttivi
-      .filter(
-        (item) =>
-          item.frequenza === "Mensile" &&
-          costoSocietaAnnuale(item, annoVisualizzato) > 0
-      )
-      .reduce(
-        (totale, item) =>
-          totale +
-          Number(item.importo || 0) +
-          Number(item.cassa || 0) +
-          Number(item.iva || 0),
-        0
+    const costiMaturati = costiAttivi
+      .flatMap((costo) => movimentiCostoSocietaMaturati(costo))
+      .filter((movimento) =>
+        movimento.dataPagamento.startsWith(`${annoVisualizzato}-`)
       );
-    const annuale = costiAttivi.reduce(
-      (totale, item) => totale + costoSocietaAnnuale(item, annoVisualizzato),
+    const costiSostenuti = costiMaturati.reduce(
+      (totale, movimento) => totale + movimento.importo,
       0
     );
-    const unaTantum = costiAttivi
-      .filter((item) => item.frequenza === "Una tantum")
-      .reduce((totale, item) => {
-        const annoCosto = item.data_riferimento
-          ? new Date(item.data_riferimento).getFullYear()
-          : annoVisualizzato;
+    const costiPrevisti = costiAttivi.reduce(
+      (totale, costo) =>
+        totale + costoSocietaAnnualeNetto(costo, annoVisualizzato),
+      0
+    );
+    const cassaTotale = costiMaturati.reduce(
+      (totale, movimento) => totale + movimento.cassa,
+      0
+    );
+    const ivaTotale = costiMaturati.reduce(
+      (totale, movimento) => totale + movimento.iva,
+      0
+    );
 
-        return annoCosto === annoVisualizzato
-          ? totale +
-              Number(item.importo || 0) +
-              Number(item.cassa || 0) +
-              Number(item.iva || 0)
-          : totale;
-      }, 0);
-
-    return { mensile, annuale, unaTantum };
+    return {
+      costiSostenuti,
+      costiPrevisti,
+      cassaTotale,
+      ivaTotale,
+    };
   }, [annoVisualizzato, costi]);
 
   const importoFormNumero = parseImporto(form.importo);
@@ -168,11 +167,22 @@ export default function EconomiaCostiPage() {
     });
   }
 
-  function nuovaVoce() {
+  function nuovaVoce(frequenza: FrequenzaCosto = "Mensile") {
+    setForm({
+      ...creaFormIniziale(annoVisualizzato),
+      frequenza,
+    });
+    setFormAperto(true);
+  }
+
+  function chiudiForm() {
     setForm(creaFormIniziale(annoVisualizzato));
+    setFormAperto(false);
   }
 
   function apriCosto(costo: CostoSocieta) {
+    setTab(costo.frequenza === "Una tantum" ? "una_tantum" : "fisse");
+    setFormAperto(true);
     setForm({
       id: costo.id,
       descrizione: costo.descrizione,
@@ -270,7 +280,7 @@ export default function EconomiaCostiPage() {
 
     await caricaCosti();
     setTimeout(() => setSalvataggio(false), 1000);
-    if (!form.id) nuovaVoce();
+    chiudiForm();
   }
 
   async function eliminaCosto() {
@@ -289,7 +299,7 @@ export default function EconomiaCostiPage() {
       return;
     }
 
-    nuovaVoce();
+    chiudiForm();
     await caricaCosti();
   }
 
@@ -297,55 +307,35 @@ export default function EconomiaCostiPage() {
     <LayoutApp>
       <EconomiaAccessGuard>
         <div className="space-y-5">
-          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-            <div>
-              <h2 className="page-title">Costi società</h2>
-              <p className="text-[15px] text-[#D79D06] mt-1">
-                Affitto, spese fisse, costi annuali e spese una tantum
-              </p>
-            </div>
+          <div>
+            <h2 className="page-title">Costi società</h2>
+            <p className="mt-1 text-[15px] text-[#D79D06]">
+              Affitto, spese fisse, costi annuali e spese una tantum
+            </p>
+          </div>
 
-            <div className="flex flex-wrap gap-2">
-              <div className="inline-flex items-center rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
+          <div className="overflow-x-auto rounded-2xl border border-white bg-white p-1.5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]" role="tablist" aria-label="Sezioni costi società">
+            <div className="flex min-w-max gap-1">
+              {([
+                ["fisse", "Spese fisse"],
+                ["una_tantum", "Spese una tantum"],
+                ["riepilogo", "Riepilogo"],
+              ] as Array<[CostiTab, string]>).map(([id, label]) => (
                 <button
+                  key={id}
                   type="button"
-                  onClick={() => setAnnoVisualizzato((corrente) => corrente - 1)}
-                  className="h-10 w-10 rounded-lg text-[#2B2F5E] hover:bg-[#F2F2F2] cursor-pointer"
-                  aria-label="Anno precedente"
+                  role="tab"
+                  aria-selected={tab === id}
+                  onClick={() => { setTab(id); setFormAperto(false); }}
+                  className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition cursor-pointer ${
+                    tab === id
+                      ? "bg-[#2B2F5E] text-white"
+                      : "text-[#2B2F5E] hover:bg-[#F2F2F2]"
+                  }`}
                 >
-                  {"<"}
+                  {label}
                 </button>
-                <input
-                  type="number"
-                  value={annoVisualizzato}
-                  onChange={(event) =>
-                    setAnnoVisualizzato(Number(event.target.value) || annoCorrente)
-                  }
-                  className="h-10 w-20 border-0 bg-transparent text-center text-sm font-semibold text-[#2B2F5E] outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => setAnnoVisualizzato((corrente) => corrente + 1)}
-                  className="h-10 w-10 rounded-lg text-[#2B2F5E] hover:bg-[#F2F2F2] cursor-pointer"
-                  aria-label="Anno successivo"
-                >
-                  {">"}
-                </button>
-              </div>
-              <Link
-                href="/economia"
-                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-[#2B2F5E] shadow-sm hover:bg-[#F2F2F2]"
-              >
-                <AppIcon name="chartBar" size={17} />
-                Report
-              </Link>
-              <Link
-                href="/economia/commesse"
-                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-[#2B2F5E] shadow-sm hover:bg-[#F2F2F2]"
-              >
-                <AppIcon name="briefcase" size={17} />
-                Commesse
-              </Link>
+              ))}
             </div>
           </div>
 
@@ -357,20 +347,30 @@ export default function EconomiaCostiPage() {
             </div>
           ) : (
             <>
-              <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Kpi label="Costi mensili" value={formattaEuro(riepilogo.mensile)} />
+              <section
+                className={`${tab === "riepilogo" ? "grid" : "hidden"} grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4`}
+                role="tabpanel"
+              >
                 <Kpi
-                  label="Spese una tantum"
-                  value={formattaEuro(riepilogo.unaTantum)}
+                  label="Costi sostenuti fino a oggi"
+                  value={formattaEuro(riepilogo.costiSostenuti)}
                 />
                 <Kpi
-                  label={`Costi ${annoVisualizzato}`}
-                  value={formattaEuro(riepilogo.annuale)}
+                  label="Costi previsti entro fine anno"
+                  value={formattaEuro(riepilogo.costiPrevisti)}
+                />
+                <Kpi
+                  label="Cassa totale"
+                  value={formattaEuro(riepilogo.cassaTotale)}
+                />
+                <Kpi
+                  label="IVA totale"
+                  value={formattaEuro(riepilogo.ivaTotale)}
                 />
               </section>
 
-              <div className="grid grid-cols-1 2xl:grid-cols-[420px_minmax(0,1fr)] gap-5">
-                <Card
+              <div className={`${tab === "riepilogo" ? "hidden" : "grid"} grid-cols-1 gap-5 ${formAperto ? "2xl:grid-cols-[420px_minmax(0,1fr)]" : ""}`} role="tabpanel">
+                {formAperto ? <Card
                   title={
                     <div className="flex items-center justify-between gap-3">
                       <span className="flex items-center gap-3">
@@ -379,11 +379,11 @@ export default function EconomiaCostiPage() {
                       </span>
                       <button
                         type="button"
-                        onClick={nuovaVoce}
-                        className="h-9 w-9 rounded-xl bg-[#64B445] text-white flex items-center justify-center hover:bg-[#5AA03E] cursor-pointer"
-                        aria-label="Nuovo costo"
+                        onClick={chiudiForm}
+                        className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-[#F2F2F2] cursor-pointer"
+                        aria-label="Chiudi form"
                       >
-                        <AppIcon name="plus" size={17} />
+                        <AppIcon name="x" size={17} />
                       </button>
                     </div>
                   }
@@ -516,6 +516,13 @@ export default function EconomiaCostiPage() {
                     </label>
 
                     <div className="flex justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={chiudiForm}
+                        className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-[#2B2F5E] hover:bg-[#F2F2F2] cursor-pointer"
+                      >
+                        Annulla
+                      </button>
                       {form.id && (
                         <button
                           type="button"
@@ -539,24 +546,26 @@ export default function EconomiaCostiPage() {
                       </button>
                     </div>
                   </div>
-                </Card>
+                </Card> : null}
 
                 <div className="space-y-5">
-                  <ArchivioCosti
+                  {tab === "fisse" ? <ArchivioCosti
                     title="Archivio spese fisse"
                     emptyText="Nessuna spesa fissa inserita."
                     costi={speseFisse}
                     annoCorrente={annoVisualizzato}
                     onOpen={apriCosto}
+                    onAdd={() => nuovaVoce("Mensile")}
                     showPeriodo
-                  />
-                  <ArchivioCosti
+                  /> : null}
+                  {tab === "una_tantum" ? <ArchivioCosti
                     title="Archivio spese una tantum"
                     emptyText="Nessuna spesa una tantum inserita."
                     costi={speseUnaTantum}
                     annoCorrente={annoVisualizzato}
                     onOpen={apriCosto}
-                  />
+                    onAdd={() => nuovaVoce("Una tantum")}
+                  /> : null}
                 </div>
               </div>
             </>
@@ -645,6 +654,7 @@ function ArchivioCosti({
   costi,
   annoCorrente,
   onOpen,
+  onAdd,
   showPeriodo = false,
 }: {
   title: string;
@@ -652,15 +662,27 @@ function ArchivioCosti({
   costi: CostoSocieta[];
   annoCorrente: number;
   onOpen: (costo: CostoSocieta) => void;
+  onAdd: () => void;
   showPeriodo?: boolean;
 }) {
   return (
     <Card
       title={
-        <span className="flex items-center gap-3">
-          <IconBadge />
-          {title}
-        </span>
+        <div className="flex items-center justify-between gap-3">
+          <span className="flex items-center gap-3">
+            <IconBadge />
+            {title}
+          </span>
+          <button
+            type="button"
+            onClick={onAdd}
+            className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#64B445] text-white hover:bg-[#5AA03E] cursor-pointer"
+            aria-label={`Aggiungi voce a ${title}`}
+            title="Aggiungi costo"
+          >
+            <AppIcon name="plus" size={17} />
+          </button>
+        </div>
       }
     >
       {costi.length === 0 ? (

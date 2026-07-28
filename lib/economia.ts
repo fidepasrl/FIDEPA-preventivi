@@ -14,6 +14,84 @@ export type CostoSocietaCalcolabile = {
   attivo?: boolean | null;
 };
 
+export type MovimentoCostoSocietaMaturato = {
+  dataPagamento: string;
+  importo: number;
+  cassa: number;
+  iva: number;
+};
+
+function dataLocaleIso(data: Date) {
+  const anno = data.getFullYear();
+  const mese = String(data.getMonth() + 1).padStart(2, "0");
+  const giorno = String(data.getDate()).padStart(2, "0");
+  return `${anno}-${mese}-${giorno}`;
+}
+
+function primoGiornoDelMese(data: Date) {
+  return new Date(data.getFullYear(), data.getMonth(), 1);
+}
+
+export function movimentiCostoSocietaMaturati(
+  costo: CostoSocietaCalcolabile,
+  oggi = new Date()
+): MovimentoCostoSocietaMaturato[] {
+  if (costo.attivo === false) return [];
+
+  const importi = {
+    importo: parseImporto(costo.importo),
+    cassa: parseImporto(costo.cassa),
+    iva: parseImporto(costo.iva),
+  };
+  const limite = new Date(oggi.getFullYear(), oggi.getMonth(), oggi.getDate());
+  const risultato: MovimentoCostoSocietaMaturato[] = [];
+  const aggiungi = (data: Date) => {
+    if (data <= limite) {
+      risultato.push({ dataPagamento: dataLocaleIso(data), ...importi });
+    }
+  };
+
+  if (costo.frequenza === "Mensile") {
+    const dataInizio = leggiData(costo.data_inizio);
+    if (!dataInizio) return [];
+    const inizio = primoGiornoDelMese(dataInizio);
+    const numeroMesi = Math.max(0, Math.trunc(parseImporto(costo.numero_mesi)));
+    const dataFine = leggiData(costo.data_fine);
+    const fine = numeroMesi > 0
+      ? new Date(inizio.getFullYear(), inizio.getMonth() + numeroMesi - 1, 1)
+      : dataFine
+        ? primoGiornoDelMese(dataFine)
+        : inizio;
+
+    for (
+      let data = new Date(inizio);
+      data <= fine && data <= limite;
+      data = new Date(data.getFullYear(), data.getMonth() + 1, 1)
+    ) {
+      aggiungi(data);
+    }
+    return risultato;
+  }
+
+  if (costo.frequenza === "Annuale") {
+    const riferimento = leggiData(costo.data_riferimento);
+    if (!riferimento) return [];
+    for (let mese = 0; mese < 12; mese += 1) {
+      aggiungi(new Date(riferimento.getFullYear(), mese, 1));
+    }
+    return risultato;
+  }
+
+  const riferimento = leggiData(costo.data_riferimento);
+  if (riferimento && riferimento <= limite) {
+    risultato.push({
+      dataPagamento: dataLocaleIso(riferimento),
+      ...importi,
+    });
+  }
+  return risultato;
+}
+
 export function totaleCostoSocieta(costo: CostoSocietaCalcolabile) {
   return (
     parseImporto(costo.importo) +

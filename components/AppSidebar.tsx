@@ -245,6 +245,11 @@ export default function AppSidebar({
                 onClick={() => gestisciNavigazione("/economia/commesse")}
               />
               <SidebarSubItem
+                label="Personale"
+                active={pathname === "/economia/personale"}
+                onClick={() => gestisciNavigazione("/economia/personale")}
+              />
+              <SidebarSubItem
                 label="Costi società"
                 active={pathname === "/economia/costi"}
                 onClick={() => gestisciNavigazione("/economia/costi")}
@@ -268,6 +273,11 @@ export default function AppSidebar({
               active={pathname === "/rubrica/professionisti"}
               onClick={() => gestisciNavigazione("/rubrica/professionisti")}
             />
+            <SidebarSubItem
+              label="Rappresentanti"
+              active={pathname.startsWith("/rubrica/rappresentanti")}
+              onClick={() => gestisciNavigazione("/rubrica/rappresentanti")}
+            />
           </SidebarGroup>
         </nav>
 
@@ -290,7 +300,7 @@ export default function AppSidebar({
           )}
 
           <div className="px-1 text-[11px] text-[#2B2F5E]/55">
-            Versione 2.3.1 - Creato da Antonio Carbone
+            Versione 2.3.2 - Creato da Antonio Carbone
           </div>
         </div>
       </aside>

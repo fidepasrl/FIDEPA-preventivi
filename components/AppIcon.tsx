@@ -14,6 +14,7 @@ export type AppIconName =
   | "coins"
   | "download"
   | "euro"
+  | "eye"
   | "externalLink"
   | "facebook"
   | "fileText"
@@ -119,6 +120,12 @@ const paths: Record<AppIconName, ReactNode> = {
     <>
       <path d="M17 5.5A7 7 0 1 0 17 18.5" />
       <path d="M5 10h9M5 14h8" />
+    </>
+  ),
+  eye: (
+    <>
+      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+      <circle cx="12" cy="12" r="2.75" />
     </>
   ),
   externalLink: (

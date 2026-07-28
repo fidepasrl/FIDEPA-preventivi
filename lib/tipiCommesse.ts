@@ -7,6 +7,7 @@ export const TIPI_COMMESSA = [
   "Pa.Ma",
   "Superbonus",
   "Validazione progetti",
+  "Diagnosi Energetica",
 ] as const;
 
 export type TipoCommessa = (typeof TIPI_COMMESSA)[number];
@@ -20,6 +21,7 @@ export const CODICE_TIPO_COMMESSA: Record<TipoCommessa, string> = {
   "Pa.Ma": "PMA",
   Superbonus: "SBN",
   "Validazione progetti": "VAL",
+  "Diagnosi Energetica": "DIE",
 };
 
 export const SIMBOLO_TIPO_COMMESSA: Record<TipoCommessa, string> = {
@@ -31,6 +33,7 @@ export const SIMBOLO_TIPO_COMMESSA: Record<TipoCommessa, string> = {
   "Pa.Ma": "\u25c7",
   Superbonus: "\u2605",
   "Validazione progetti": "\u2713",
+  "Diagnosi Energetica": "\u26a1",
 };
 
 export const COLORE_TIPO_COMMESSA: Record<TipoCommessa, string> = {
@@ -42,6 +45,7 @@ export const COLORE_TIPO_COMMESSA: Record<TipoCommessa, string> = {
   "Pa.Ma": "text-[#D79D06]",
   Superbonus: "text-[#D96F4B]",
   "Validazione progetti": "text-[#4B5563]",
+  "Diagnosi Energetica": "text-[#4D9635]",
 };
 
 export const COLORE_BG_TIPO_COMMESSA: Record<TipoCommessa, string> = {
@@ -53,6 +57,7 @@ export const COLORE_BG_TIPO_COMMESSA: Record<TipoCommessa, string> = {
   "Pa.Ma": "bg-[#D79D06]",
   Superbonus: "bg-[#D96F4B]",
   "Validazione progetti": "bg-[#4B5563]",
+  "Diagnosi Energetica": "bg-[#4D9635]",
 };
 
 export function isTipoCommessa(tipo: string | null | undefined): tipo is TipoCommessa {

@@ -10,7 +10,10 @@ create table if not exists public.economia_commesse (
   commessa_id uuid not null references public.commesse(id) on delete cascade,
   anno integer not null default extract(year from now())::integer,
   compenso numeric(14,2) not null default 0,
+  rimborso_spese numeric(14,2) not null default 0,
   trattenuta_percentuale numeric(5,2) not null default 0,
+  trattenuta_fisso_percentuale numeric(5,2) not null default 0,
+  trattenuta_operativo_percentuale numeric(5,2) not null default 0,
   cassa numeric(14,2) not null default 0,
   iva numeric(14,2) not null default 0,
   fatturato_come_ing_pascale boolean not null default false,
@@ -18,6 +21,7 @@ create table if not exists public.economia_commesse (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint economia_commesse_anno_check check (anno between 2000 and 2100),
+  constraint economia_commesse_rimborso_spese_check check (rimborso_spese >= 0),
   constraint economia_commesse_unica_per_anno unique (commessa_id, anno)
 );
 
@@ -36,6 +40,15 @@ create table if not exists public.economia_commesse_collaboratori (
       persona_id is not null
       or nullif(btrim(coalesce(collaboratore_esterno_nome, '')), '') is not null
     )
+);
+
+create table if not exists public.economia_commesse_pagamenti (
+  id uuid primary key default gen_random_uuid(),
+  economia_commessa_id uuid not null references public.economia_commesse(id) on delete cascade,
+  importo numeric(14,2) not null,
+  data_pagamento date not null,
+  created_at timestamptz not null default now(),
+  constraint economia_commesse_pagamenti_importo_check check (importo > 0)
 );
 
 create table if not exists public.economia_commesse_costi (
@@ -98,6 +111,8 @@ create index if not exists economia_commesse_anno_idx
   on public.economia_commesse(anno);
 create index if not exists economia_collaboratori_commessa_idx
   on public.economia_commesse_collaboratori(economia_commessa_id);
+create index if not exists economia_pagamenti_commessa_data_idx
+  on public.economia_commesse_pagamenti(economia_commessa_id, data_pagamento);
 create index if not exists economia_costi_commessa_idx
   on public.economia_commesse_costi(economia_commessa_id);
 create index if not exists economia_collaboratori_sal_collaboratore_idx
@@ -108,7 +123,10 @@ create index if not exists economia_costi_societa_data_idx
   on public.economia_costi_societa(data_riferimento);
 
 alter table public.economia_commesse
+  add column if not exists rimborso_spese numeric(14,2) not null default 0,
   add column if not exists trattenuta_percentuale numeric(5,2) not null default 0,
+  add column if not exists trattenuta_fisso_percentuale numeric(5,2) not null default 0,
+  add column if not exists trattenuta_operativo_percentuale numeric(5,2) not null default 0,
   add column if not exists cassa numeric(14,2) not null default 0,
   add column if not exists iva numeric(14,2) not null default 0,
   add column if not exists fatturato_come_ing_pascale boolean not null default false;
@@ -169,6 +187,7 @@ begin
   foreach table_name in array array[
     'economia_commesse',
     'economia_commesse_collaboratori',
+    'economia_commesse_pagamenti',
     'economia_commesse_costi',
     'economia_collaboratori_sal',
     'economia_costi_progetto_sal',
