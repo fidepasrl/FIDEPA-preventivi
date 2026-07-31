@@ -116,6 +116,81 @@ export function ordinaCommesse(
   });
 }
 
+export type GruppoCommesse = {
+  chiave: string;
+  etichetta: string;
+  commesse: CommessaElenco[];
+};
+
+function gruppoCommessa(
+  commessa: CommessaElenco,
+  ordine: OrdinamentoCommesse
+) {
+  if (ordine === "priorita") {
+    return {
+      chiave: commessa.priorita,
+      etichetta: `Priorità ${commessa.priorita}`,
+    };
+  }
+  if (ordine === "tipo") {
+    return {
+      chiave: commessa.tipo_commessa,
+      etichetta: `Tipologia · ${commessa.tipo_commessa}`,
+    };
+  }
+  if (ordine === "posizione") {
+    const posizione = commessa.posizione?.trim() || "Posizione non indicata";
+    return { chiave: posizione, etichetta: `Posizione · ${posizione}` };
+  }
+  if (ordine === "titolo") {
+    const iniziale = commessa.titolo.trim().charAt(0).toLocaleUpperCase("it-IT") || "#";
+    return { chiave: iniziale, etichetta: iniziale };
+  }
+  if (ordine === "codice") {
+    const prefisso = commessa.codice?.trim().split(/[_\-\s]/)[0] || "";
+    return prefisso
+      ? { chiave: prefisso, etichetta: `Codice ${prefisso}` }
+      : { chiave: "senza-codice", etichetta: "Senza codice" };
+  }
+
+  const valore = commessa.dataUltimaNota || commessa.updated_at || commessa.created_at;
+  if (!valore) {
+    return { chiave: "senza-aggiornamenti", etichetta: "Senza aggiornamenti" };
+  }
+  const data = new Date(valore);
+  if (Number.isNaN(data.getTime())) {
+    return { chiave: "senza-aggiornamenti", etichetta: "Senza aggiornamenti" };
+  }
+  return {
+    chiave: `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}`,
+    etichetta: `Aggiornamenti · ${new Intl.DateTimeFormat("it-IT", {
+      month: "long",
+      year: "numeric",
+    }).format(data)}`,
+  };
+}
+
+export function raggruppaCommesse(
+  commesse: CommessaElenco[],
+  ordine: OrdinamentoCommesse
+): GruppoCommesse[] {
+  const gruppi: GruppoCommesse[] = [];
+  const perChiave = new Map<string, GruppoCommesse>();
+
+  for (const commessa of commesse) {
+    const gruppo = gruppoCommessa(commessa, ordine);
+    let esistente = perChiave.get(gruppo.chiave);
+    if (!esistente) {
+      esistente = { ...gruppo, commesse: [] };
+      perChiave.set(gruppo.chiave, esistente);
+      gruppi.push(esistente);
+    }
+    esistente.commesse.push(commessa);
+  }
+
+  return gruppi;
+}
+
 function valoreCsv(valore: unknown) {
   const testo = String(valore ?? "");
   return `"${testo.replaceAll('"', '""')}"`;

@@ -742,7 +742,7 @@ export default function CommessePage() {
           onAction={!commesse.length ? apriNuovaCommessa : undefined}
         />
       ) : vista === "table" ? (
-        <CommesseTable commesse={commessePagina} onPriorityChange={(commessa, priorita) => void aggiornaPrioritaDaElenco(commessa, priorita)} onDelete={eliminaCommessa} />
+        <CommesseTable commesse={commessePagina} ordine={ordine} onPriorityChange={(commessa, priorita) => void aggiornaPrioritaDaElenco(commessa, priorita)} onDelete={eliminaCommessa} />
       ) : ordine === "priorita" ? (
         <DndContext onDragEnd={handleDragEnd}>
           <div className="space-y-7">

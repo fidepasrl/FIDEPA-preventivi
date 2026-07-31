@@ -14,7 +14,13 @@ const compilato = ts.transpileModule(sorgente, {
   },
 }).outputText;
 const moduloUrl = `data:text/javascript;base64,${Buffer.from(compilato).toString("base64")}`;
-const { creaCsvCommesse, filtraCommesse, leggiCsvCommesse, ordinaCommesse } =
+const {
+  creaCsvCommesse,
+  filtraCommesse,
+  leggiCsvCommesse,
+  ordinaCommesse,
+  raggruppaCommesse,
+} =
   await import(moduloUrl);
 
 const filtriVuoti = {
@@ -78,6 +84,30 @@ test("l'ordinamento iniziale segue la priorità", () => {
   assert.deepEqual(
     ordinaCommesse(commesse, "priorita").map((item) => item.id),
     ["2", "1", "3"]
+  );
+});
+
+test("la tabella crea blocchi coerenti con l'ordinamento selezionato", () => {
+  const perPriorita = raggruppaCommesse(
+    ordinaCommesse(commesse, "priorita"),
+    "priorita"
+  );
+  assert.deepEqual(
+    perPriorita.map((gruppo) => [gruppo.etichetta, gruppo.commesse.length]),
+    [
+      ["Priorità Urgente", 1],
+      ["Priorità Bassa", 1],
+      ["Priorità Terminato", 1],
+    ]
+  );
+
+  const perPosizione = raggruppaCommesse(
+    ordinaCommesse(commesse, "posizione"),
+    "posizione"
+  );
+  assert.deepEqual(
+    perPosizione.map((gruppo) => gruppo.etichetta),
+    ["Posizione · Caserta", "Posizione · Napoli"]
   );
 });
 

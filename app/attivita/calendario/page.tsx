@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type WheelEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import LayoutApp from "@/components/LayoutApp";
+import AppIcon from "@/components/AppIcon";
 import { supabase } from "@/lib/supabase";
 import { getSimboloTipoCommessa } from "@/lib/tipiCommesse";
 
@@ -121,8 +122,20 @@ const FORM_APPUNTAMENTO_INIZIALE = {
 const COLONNE_CALENDARIO =
   "44px repeat(5, minmax(0, 1fr)) 44px 44px";
 const COLONNE_GIORNI_CALENDARIO = "repeat(5, minmax(0, 1fr)) 44px 44px";
-const INTERVALLO_CAMBIO_MESE_WHEEL = 650;
-const SOGLIA_CAMBIO_MESE_WHEEL = 40;
+const MESI_ANNO = [
+  "Gennaio",
+  "Febbraio",
+  "Marzo",
+  "Aprile",
+  "Maggio",
+  "Giugno",
+  "Luglio",
+  "Agosto",
+  "Settembre",
+  "Ottobre",
+  "Novembre",
+  "Dicembre",
+] as const;
 
 function getRelazioneSingola<T>(valore: RelazioneSupabase<T>) {
   if (Array.isArray(valore)) {
@@ -185,7 +198,11 @@ export default function CalendarioAttivitaPage() {
   const [salvataggioAppuntamento, setSalvataggioAppuntamento] = useState(false);
 
   const [caricamento, setCaricamento] = useState(true);
-  const ultimoCambioMeseWheel = useRef(0);
+  const [selettoreMeseAperto, setSelettoreMeseAperto] = useState(false);
+  const [annoSelettore, setAnnoSelettore] = useState(
+    new Date().getFullYear()
+  );
+  const selettoreMeseRef = useRef<HTMLDivElement | null>(null);
 
   const anno = meseCorrente.getFullYear();
   const mese = meseCorrente.getMonth();
@@ -229,6 +246,30 @@ export default function CalendarioAttivitaPage() {
     // I dati del calendario devono essere caricati una sola volta all'apertura.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!selettoreMeseAperto) return;
+
+    function chiudiSeFuori(event: PointerEvent) {
+      if (
+        selettoreMeseRef.current &&
+        !selettoreMeseRef.current.contains(event.target as Node)
+      ) {
+        setSelettoreMeseAperto(false);
+      }
+    }
+
+    function chiudiConEsc(event: KeyboardEvent) {
+      if (event.key === "Escape") setSelettoreMeseAperto(false);
+    }
+
+    document.addEventListener("pointerdown", chiudiSeFuori);
+    document.addEventListener("keydown", chiudiConEsc);
+    return () => {
+      document.removeEventListener("pointerdown", chiudiSeFuori);
+      document.removeEventListener("keydown", chiudiConEsc);
+    };
+  }, [selettoreMeseAperto]);
 
   async function caricaDati() {
     setCaricamento(true);
@@ -384,20 +425,14 @@ export default function CalendarioAttivitaPage() {
     setMeseCorrente(new Date(anno, mese + delta, 1));
   }
 
-  function gestisciCambioMeseWheel(event: WheelEvent<HTMLDivElement>) {
-    if (Math.abs(event.deltaY) < SOGLIA_CAMBIO_MESE_WHEEL) {
-      return;
-    }
+  function apriSelettoreMese() {
+    setAnnoSelettore(anno);
+    setSelettoreMeseAperto((aperto) => !aperto);
+  }
 
-    event.preventDefault();
-
-    const adesso = Date.now();
-    if (adesso - ultimoCambioMeseWheel.current < INTERVALLO_CAMBIO_MESE_WHEEL) {
-      return;
-    }
-
-    ultimoCambioMeseWheel.current = adesso;
-    cambiaMese(event.deltaY > 0 ? 1 : -1);
+  function selezionaMese(meseSelezionato: number) {
+    setMeseCorrente(new Date(annoSelettore, meseSelezionato, 1));
+    setSelettoreMeseAperto(false);
   }
 
   function aggiornaCampo<TCampo extends keyof typeof FORM_INIZIALE>(
@@ -1079,27 +1114,110 @@ export default function CalendarioAttivitaPage() {
           </div>
         </div>
 
-        <div
-          className="bg-white border border-gray-200 shadow-sm rounded-sm overflow-hidden"
-          onWheel={gestisciCambioMeseWheel}
-        >
+        <div className="bg-white border border-gray-200 shadow-sm rounded-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-200 bg-[#FAFAFA] flex justify-between items-center">
             <button
               type="button"
               onClick={() => cambiaMese(-1)}
               className="border border-gray-300 text-[#2B2F5E] w-10 h-10 rounded-md bg-transparent hover:bg-[#e8e8e8] transition cursor-pointer"
+              aria-label="Mese precedente"
+              title="Mese precedente"
             >
               ‹
             </button>
 
-            <h3 className="text-[22px] font-semibold text-[#2B2F5E] capitalize">
-              {formattaMese(meseCorrente)}
-            </h3>
+            <div ref={selettoreMeseRef} className="relative">
+              <button
+                type="button"
+                onClick={apriSelettoreMese}
+                className="inline-flex min-h-10 items-center gap-2 rounded-xl px-4 text-[22px] font-semibold capitalize text-[#2B2F5E] transition hover:bg-[#EDEEF3] focus:outline-none focus:ring-2 focus:ring-[#5E9AD3]/25"
+                aria-expanded={selettoreMeseAperto}
+                aria-haspopup="dialog"
+                title="Seleziona rapidamente mese e anno"
+              >
+                {formattaMese(meseCorrente)}
+                <AppIcon
+                  name="chevronDown"
+                  size={17}
+                  className={`transition-transform ${
+                    selettoreMeseAperto ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+
+              {selettoreMeseAperto && (
+                <div
+                  className="absolute left-1/2 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-[#2B2F5E]/10 bg-white p-4 shadow-xl"
+                  role="dialog"
+                  aria-label="Seleziona mese e anno"
+                >
+                  <div className="mb-3 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setAnnoSelettore((corrente) => corrente - 1)}
+                      className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#2B2F5E]/10 text-lg text-[#2B2F5E] hover:bg-[#F2F2F2]"
+                      aria-label="Anno precedente"
+                    >
+                      ‹
+                    </button>
+                    <strong className="text-base text-[#2B2F5E]">
+                      {annoSelettore}
+                    </strong>
+                    <button
+                      type="button"
+                      onClick={() => setAnnoSelettore((corrente) => corrente + 1)}
+                      className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#2B2F5E]/10 text-lg text-[#2B2F5E] hover:bg-[#F2F2F2]"
+                      aria-label="Anno successivo"
+                    >
+                      ›
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    {MESI_ANNO.map((nomeMese, indice) => {
+                      const selezionato =
+                        indice === mese && annoSelettore === anno;
+                      return (
+                        <button
+                          type="button"
+                          key={nomeMese}
+                          onClick={() => selezionaMese(indice)}
+                          className={`rounded-lg px-2 py-2.5 text-sm font-medium transition ${
+                            selezionato
+                              ? "bg-[#2B2F5E] text-white"
+                              : "text-[#2B2F5E] hover:bg-[#5E9AD3]/12 hover:text-[#2D80B3]"
+                          }`}
+                          aria-current={selezionato ? "date" : undefined}
+                        >
+                          {nomeMese}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const oggi = new Date();
+                      setMeseCorrente(
+                        new Date(oggi.getFullYear(), oggi.getMonth(), 1)
+                      );
+                      setSelettoreMeseAperto(false);
+                    }}
+                    className="mt-3 w-full rounded-lg border border-[#2B2F5E]/10 px-3 py-2 text-sm font-semibold text-[#2D80B3] hover:bg-[#F2F2F2]"
+                  >
+                    Vai al mese corrente
+                  </button>
+                </div>
+              )}
+            </div>
 
             <button
               type="button"
               onClick={() => cambiaMese(1)}
               className="border border-gray-300 text-[#2B2F5E] w-10 h-10 rounded-md bg-transparent hover:bg-[#e8e8e8] transition cursor-pointer"
+              aria-label="Mese successivo"
+              title="Mese successivo"
             >
               ›
             </button>

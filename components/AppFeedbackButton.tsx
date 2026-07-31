@@ -41,7 +41,7 @@ export default function AppFeedbackButton() {
   }
 
   return (
-    <div className="fixed bottom-0 right-3 z-40 flex flex-col items-end sm:right-6">
+    <div className="fixed bottom-0 right-3 z-[1150] flex flex-col items-end sm:right-6">
       {aperto && (
         <div className="mb-2 w-[min(20rem,calc(100vw-1.5rem))] rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl">
           <div className="flex justify-between items-start mb-3">

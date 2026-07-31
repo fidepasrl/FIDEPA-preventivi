@@ -135,7 +135,7 @@ export default function DashboardMap({
     <div
       ref={contenitoreRef}
       className={
-        "relative w-full overflow-hidden border border-gray-100 bg-white " +
+        "relative isolate z-0 w-full overflow-hidden border border-gray-100 bg-white " +
         (schermoIntero
           ? "h-screen rounded-none"
           : "h-[440px] sm:h-[520px] rounded-xl")

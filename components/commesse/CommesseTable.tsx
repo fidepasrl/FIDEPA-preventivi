@@ -4,7 +4,9 @@ import Link from "next/link";
 import AppIcon from "@/components/AppIcon";
 import {
   PRIORITA_COMMESSA,
+  raggruppaCommesse,
   type CommessaElenco,
+  type OrdinamentoCommesse,
   type PrioritaCommessa,
 } from "@/lib/commesse/lista";
 import { COLORE_TIPO_COMMESSA, SIMBOLO_TIPO_COMMESSA } from "@/lib/tipiCommesse";
@@ -25,34 +27,58 @@ function formattaData(value: string | null | undefined) {
 
 export default function CommesseTable({
   commesse,
+  ordine,
   onPriorityChange,
   onDelete,
 }: {
   commesse: CommessaElenco[];
+  ordine: OrdinamentoCommesse;
   onPriorityChange: (commessa: CommessaElenco, priorita: PrioritaCommessa) => void;
   onDelete: (commessa: CommessaElenco) => void;
 }) {
+  const gruppi = raggruppaCommesse(commesse, ordine);
+
   return (
-    <div className="overflow-x-auto rounded-2xl border border-[#2B2F5E]/8 bg-white shadow-sm">
-      <table className="min-w-[1050px] w-full border-collapse text-left">
-        <thead className="bg-[#F7F8FA] text-[11px] uppercase tracking-[0.08em] text-[#2B2F5E]/55">
-          <tr>
-            <th className="px-4 py-3 font-semibold">Commessa</th>
-            <th className="px-4 py-3 font-semibold">Cliente</th>
-            <th className="px-4 py-3 font-semibold">Posizione</th>
-            <th className="px-4 py-3 font-semibold">Tipologia</th>
-            <th className="px-4 py-3 font-semibold">Priorità</th>
-            <th className="px-4 py-3 font-semibold">Ultimo aggiornamento</th>
-            <th className="px-4 py-3 text-right font-semibold">Azioni</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-[#2B2F5E]/8">
-          {commesse.map((commessa) => (
+    <div className="space-y-4">
+      {gruppi.map((gruppo) => (
+        <section key={gruppo.chiave} aria-label={gruppo.etichetta}>
+          <div className="mb-2 flex items-center gap-2 px-1">
+            <h3 className="text-xs font-bold uppercase tracking-[0.08em] text-[#2B2F5E]">
+              {gruppo.etichetta}
+            </h3>
+            <span className="rounded-full bg-[#2B2F5E]/7 px-2 py-0.5 text-[11px] font-semibold text-[#2B2F5E]/55">
+              {gruppo.commesse.length}
+            </span>
+          </div>
+          <div className="overflow-x-auto rounded-2xl border border-[#2B2F5E]/8 bg-white shadow-sm">
+            <table className="min-w-[1050px] w-full table-fixed border-collapse text-left">
+              <colgroup>
+                <col className="w-[17%]" />
+                <col className="w-[15%]" />
+                <col className="w-[15%]" />
+                <col className="w-[14%]" />
+                <col className="w-[10%]" />
+                <col className="w-[20%]" />
+                <col className="w-[9%]" />
+              </colgroup>
+              <thead className="bg-[#F7F8FA] text-[11px] uppercase tracking-[0.08em] text-[#2B2F5E]/55">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">Commessa</th>
+                  <th className="px-4 py-3 font-semibold">Cliente</th>
+                  <th className="px-4 py-3 font-semibold">Posizione</th>
+                  <th className="px-4 py-3 font-semibold">Tipologia</th>
+                  <th className="px-4 py-3 font-semibold">Priorità</th>
+                  <th className="px-4 py-3 font-semibold">Ultimo aggiornamento</th>
+                  <th className="px-4 py-3 text-right font-semibold">Azioni</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#2B2F5E]/8">
+                {gruppo.commesse.map((commessa) => (
             <tr key={commessa.id} className="group hover:bg-[#F8F9FB]">
               <td className="px-4 py-3">
                 <Link href={`/commesse/${commessa.id}`} className="block max-w-72">
-                  <span className="block truncate text-sm font-semibold text-[#2B2F5E]">{commessa.codice || "Senza codice"}</span>
-                  <span className="mt-0.5 block truncate text-xs text-[#2B2F5E]/55">{commessa.titolo}</span>
+                  <span className="block truncate text-sm font-bold text-[#2D80B3]">{commessa.titolo}</span>
+                  <span className="mt-0.5 block truncate text-xs text-[#2B2F5E]/50">{commessa.codice || "Senza codice"}</span>
                 </Link>
               </td>
               <td className="max-w-48 truncate px-4 py-3 text-sm text-[#2B2F5E]/75">{commessa.cliente_nome || "—"}</td>
@@ -88,9 +114,12 @@ export default function CommesseTable({
                 </div>
               </td>
             </tr>
-          ))}
-        </tbody>
-      </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ))}
     </div>
   );
 }
