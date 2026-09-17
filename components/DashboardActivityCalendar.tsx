@@ -97,7 +97,7 @@ export default function DashboardActivityCalendar({
           ? `${getSimboloTipoCommessa(item.tipo_commessa)} ${
               item.titolo_commessa || ""
             }`
-          : "Attivita libera";
+          : "Altre attività";
 
       return {
         tipo: "attivita" as const,

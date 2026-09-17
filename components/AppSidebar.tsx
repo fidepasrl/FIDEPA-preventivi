@@ -97,7 +97,7 @@ export default function AppSidebar({
     caricaRuolo();
   }, []);
 
-  const puoVedereEconomia = isAdminOrDeveloperRole(ruolo);
+  const puoVedereSezioniRiservate = isAdminOrDeveloperRole(ruolo);
 
   return (
     <>
@@ -159,6 +159,13 @@ export default function AppSidebar({
               active={pathname === "/riunioni/nuova"}
               onClick={() => gestisciNavigazione("/riunioni/nuova")}
             />
+            {puoVedereSezioniRiservate && (
+              <SidebarSubItem
+                label="Amministrativa"
+                active={pathname === "/riunioni/amministrativa"}
+                onClick={() => gestisciNavigazione("/riunioni/amministrativa")}
+              />
+            )}
             <SidebarSubItem
               label="Archivio"
               active={pathname === "/riunioni/archivio"}
@@ -227,7 +234,7 @@ export default function AppSidebar({
             />
           </SidebarGroup>
 
-          {puoVedereEconomia && (
+          {puoVedereSezioniRiservate && (
             <SidebarGroup
               icon="euro"
               label="Gestione Economica"
@@ -300,7 +307,7 @@ export default function AppSidebar({
           )}
 
           <div className="px-1 text-[11px] text-[#2B2F5E]/55">
-            Versione 2.3.4 - Creato da Antonio Carbone
+            Versione 2.3.5 - Creato da Antonio Carbone
           </div>
         </div>
       </aside>

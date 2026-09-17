@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test tests/economia-calcoli.test.mjs tests/professionisti-utils.test.mjs tests/clienti-utils.test.mjs tests/commesse-lista.test.mjs"
+    "test": "node --test tests/economia-calcoli.test.mjs tests/economia-export-excel.test.mjs tests/google-maps.test.mjs tests/personale-organigramma.test.mjs tests/riunioni-amministrative.test.mjs tests/professionisti-utils.test.mjs tests/clienti-utils.test.mjs tests/commesse-lista.test.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -16,6 +16,7 @@
     "@react-pdf/renderer": "^4.5.1",
     "@supabase/supabase-js": "^2.106.2",
     "dayjs": "^1.11.21",
+    "exceljs": "^4.4.0",
     "file-saver": "^2.0.5",
     "leaflet": "^1.9.4",
     "next": "16.2.6",

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import AppIcon from "@/components/AppIcon";
+import { creaUrlGoogleMaps } from "@/lib/googleMaps";
 import {
   COLORE_HEX_TIPO_COMMESSA,
   SIMBOLO_TIPO_COMMESSA,
@@ -167,34 +168,54 @@ export default function DashboardMap({
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         />
 
-        {commesseValide.map((commessa) => (
-          <Marker
-            key={commessa.id}
-            position={[
-              Number(commessa.latitudine),
-              Number(commessa.longitudine),
-            ]}
-            icon={getMarkerIcon(commessa.tipo_commessa)}
-          >
-            <Popup>
-              <Link
-                href={`/commesse/${commessa.id}`}
-                prefetch={false}
-                className="block min-w-44 text-[#2B2F5E] no-underline hover:text-[#0b73c9]"
-              >
-                <strong>{commessa.titolo}</strong>
-                <span className="block mt-1 text-[13px] text-gray-600">
-                  {commessa.posizione || "Posizione non indicata"}
-                </span>
-                <span className="mt-1.5 block text-[12px] font-semibold text-[#2D80B3]">
-                  {isTipoCommessa(commessa.tipo_commessa)
-                    ? `${getSimboloTipoCommessa(commessa.tipo_commessa)} ${commessa.tipo_commessa}`
-                    : "Tipo non indicato"}
-                </span>
-              </Link>
-            </Popup>
-          </Marker>
-        ))}
+        {commesseValide.map((commessa) => {
+          const googleMapsUrl = creaUrlGoogleMaps(
+            commessa.latitudine,
+            commessa.longitudine
+          );
+
+          return (
+            <Marker
+              key={commessa.id}
+              position={[
+                Number(commessa.latitudine),
+                Number(commessa.longitudine),
+              ]}
+              icon={getMarkerIcon(commessa.tipo_commessa)}
+            >
+              <Popup>
+                <Link
+                  href={`/commesse/${commessa.id}`}
+                  prefetch={false}
+                  className="block min-w-44 text-[#2B2F5E] no-underline hover:text-[#0b73c9]"
+                >
+                  <strong>{commessa.titolo}</strong>
+                  <span className="block mt-1 text-[13px] text-gray-600">
+                    {commessa.posizione || "Posizione non indicata"}
+                  </span>
+                  <span className="mt-1.5 block text-[12px] font-semibold text-[#2D80B3]">
+                    {isTipoCommessa(commessa.tipo_commessa)
+                      ? `${getSimboloTipoCommessa(commessa.tipo_commessa)} ${commessa.tipo_commessa}`
+                      : "Tipo non indicato"}
+                  </span>
+                </Link>
+
+                {googleMapsUrl ? (
+                  <a
+                    href={googleMapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#2D80B3] px-3 py-2 text-[12px] font-semibold !text-white no-underline transition hover:bg-[#246A95] hover:!text-white"
+                    aria-label={`Apri ${commessa.titolo} in Google Maps`}
+                  >
+                    <AppIcon name="map" size={15} />
+                    Apri in Google Maps
+                  </a>
+                ) : null}
+              </Popup>
+            </Marker>
+          );
+        })}
       </MapContainer>
 
       <div className="pointer-events-none absolute bottom-3 left-3 z-[500] rounded-xl border border-gray-100 bg-white/95 px-3 py-2.5 shadow-md backdrop-blur-sm">

@@ -729,7 +729,7 @@ export default function CalendarioAttivitaPage() {
       personaIds: formAppuntamento.persone_ids,
       personaRimossiIds: personeRimosseIds,
       commessaTitolo: appuntamentoLibero
-        ? "Attivita libera"
+        ? "Altre attività"
         : commesse.find((commessa) => commessa.id === payload.commessa_id)
             ?.titolo || "Commessa",
       data: payload.data,
@@ -803,7 +803,7 @@ export default function CalendarioAttivitaPage() {
       personaIds: personeIds,
       personaRimossiIds: [],
       commessaTitolo:
-        appuntamentoEliminato.titolo_commessa || "Attivita libera",
+        appuntamentoEliminato.titolo_commessa || "Altre attività",
       data: appuntamentoEliminato.data,
       ora: appuntamentoEliminato.ora.slice(0, 5),
       posizione: appuntamentoEliminato.posizione || "",
@@ -1026,7 +1026,7 @@ export default function CalendarioAttivitaPage() {
 
   function getTitoloCommessa(item: Attivita) {
     if (!item.commessa_id || !item.tipo_commessa) {
-      return "Attivita libera";
+      return "Altre attività";
     }
 
     const simbolo = getSimboloTipoCommessa(item.tipo_commessa);
@@ -1472,7 +1472,7 @@ export default function CalendarioAttivitaPage() {
                   onChange={(e) => aggiornaCampo("commessa_id", e.target.value)}
                   className="w-full border border-gray-300 rounded-md px-4 py-3 bg-transparent outline-none transition focus:bg-white focus:border-[#64B445] focus:shadow-sm cursor-pointer"
                 >
-                  <option value="">Attività libera</option>
+                  <option value="">Altre attività</option>
 
                   {commesse.map((commessa) => (
                     <option key={commessa.id} value={commessa.id}>

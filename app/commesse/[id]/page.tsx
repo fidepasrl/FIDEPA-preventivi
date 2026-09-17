@@ -7,6 +7,7 @@ import AppIcon from "@/components/AppIcon";
 import { saveAs } from "file-saver";
 import { supabase } from "@/lib/supabase";
 import { creaCartellaStandardCommessa } from "@/lib/cartellaStandardCommessa";
+import { creaUrlGoogleMaps } from "@/lib/googleMaps";
 import {
   SIMBOLO_TIPO_COMMESSA,
   TIPI_COMMESSA,
@@ -726,6 +727,10 @@ export default function DettaglioCommessaPage() {
   }
 
   const ultimaNota = note[0];
+  const googleMapsUrl = creaUrlGoogleMaps(
+    commessa.latitudine,
+    commessa.longitudine
+  );
 
   return (
     <LayoutApp>
@@ -804,6 +809,29 @@ export default function DettaglioCommessaPage() {
             </div>
 
             <div className="flex gap-3">
+              {googleMapsUrl ? (
+                <a
+                  href={googleMapsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="h-12 w-12 inline-flex items-center justify-center border border-[#5E9AD3] text-[#2D80B3] rounded-md bg-white hover:bg-[#EAF3FA] transition cursor-pointer"
+                  title="Apri il cantiere in Google Maps"
+                  aria-label="Apri il cantiere in Google Maps"
+                >
+                  <AppIcon name="map" size={22} />
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="h-12 w-12 inline-flex items-center justify-center border border-gray-200 text-gray-300 rounded-md bg-gray-50 cursor-not-allowed"
+                  title="Coordinate del cantiere non disponibili"
+                  aria-label="Google Maps non disponibile: coordinate del cantiere mancanti"
+                >
+                  <AppIcon name="map" size={22} />
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={scaricaCartellaStandard}

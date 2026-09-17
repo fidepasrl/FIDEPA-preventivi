@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import AppIcon, { type AppIconName } from "@/components/AppIcon";
+import PortalAudioPlayer from "@/components/PortalAudioPlayer";
 import { isDeveloperRole, normalizeRole, roleLabel } from "@/lib/roles";
 import { supabase } from "@/lib/supabase";
 
@@ -213,9 +214,12 @@ export default function Topbar({
             className="h-auto"
           />
 
-          <span className="hidden 2xl:block text-[13px] font-medium text-white/85 border-l border-white/30 pl-3">
-            Portale di gestione aziendale
-          </span>
+          <div className="hidden border-l border-white/30 pl-3 xl:block">
+            <span className="block text-[12px] font-medium leading-tight text-white/85">
+              Portale di gestione aziendale
+            </span>
+            <PortalAudioPlayer />
+          </div>
         </div>
 
         <div className="group relative hidden md:block flex-1 max-w-2xl mx-auto">
@@ -282,7 +286,7 @@ export default function Topbar({
         </div>
 
         <div className="ml-auto flex items-center gap-1.5 shrink-0">
-          <span className="hidden xl:block mr-2 text-[12px] font-medium text-white/85 capitalize">
+          <span className="hidden 2xl:block mr-2 text-[12px] font-medium text-white/85 capitalize">
             {today}
           </span>
 

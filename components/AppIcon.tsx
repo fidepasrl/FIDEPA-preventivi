@@ -33,6 +33,8 @@ export type AppIconName =
   | "menu"
   | "message"
   | "minimize"
+  | "pause"
+  | "play"
   | "plus"
   | "refresh"
   | "search"
@@ -42,6 +44,8 @@ export type AppIconName =
   | "userAdmin"
   | "userDeveloper"
   | "users"
+  | "volume"
+  | "volumeMuted"
   | "wallet"
   | "x";
 
@@ -211,6 +215,13 @@ const paths: Record<AppIconName, ReactNode> = {
     </>
   ),
   minimize: <path d="M8 3v5H3M16 3v5h5M8 21v-5H3M16 21v-5h5" />,
+  pause: (
+    <>
+      <rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none" />
+      <rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  play: <path d="m8 5 11 7-11 7z" fill="currentColor" stroke="none" />,
   plus: <path d="M12 5v14M5 12h14" />,
   refresh: (
     <>
@@ -262,6 +273,18 @@ const paths: Record<AppIconName, ReactNode> = {
     <>
       <circle cx="9" cy="8" r="3" />
       <path d="M3 20a6 6 0 0 1 12 0M16 5a3 3 0 0 1 0 6M17 14a6 6 0 0 1 4 6" />
+    </>
+  ),
+  volume: (
+    <>
+      <path d="M11 5 6 9H3v6h3l5 4z" />
+      <path d="M15 9a4 4 0 0 1 0 6M17.5 6.5a8 8 0 0 1 0 11" />
+    </>
+  ),
+  volumeMuted: (
+    <>
+      <path d="M11 5 6 9H3v6h3l5 4z" />
+      <path d="m16 10 5 5M21 10l-5 5" />
     </>
   ),
   wallet: (

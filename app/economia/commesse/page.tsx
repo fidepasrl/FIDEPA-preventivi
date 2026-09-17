@@ -153,6 +153,7 @@ export default function EconomiaCommessePage() {
   const [ricerca, setRicerca] = useState("");
   const [caricamento, setCaricamento] = useState(true);
   const [caricamentoWorkspace, setCaricamentoWorkspace] = useState(false);
+  const [esportazioneExcel, setEsportazioneExcel] = useState(false);
   const [errore, setErrore] = useState("");
   const [toast, setToast] = useState("");
 
@@ -400,6 +401,40 @@ export default function EconomiaCommessePage() {
     await ricaricaWorkspace("Costo archiviato.");
   }
 
+  async function esportaCommessa() {
+    if (!commessa || esportazioneExcel) return;
+    setEsportazioneExcel(true);
+    try {
+      const { esportaExcelCommessa } = await import(
+        "@/lib/economia-commesse/export-excel"
+      );
+      await esportaExcelCommessa({
+        commessa,
+        scheda,
+        workspace,
+        riepilogo,
+        preventivo:
+          preventivi.find((item) => item.numero === scheda?.preventivo_numero) ||
+          null,
+        soggettoFiscale:
+          soggetti.find((item) => item.id === scheda?.soggetto_fiscale_id) ||
+          null,
+        personale,
+        professionisti,
+        profili,
+      });
+      mostraToast("Foglio Excel della commessa esportato.");
+    } catch (error) {
+      mostraToast(
+        error instanceof Error
+          ? `Esportazione Excel non riuscita: ${error.message}`
+          : "Esportazione Excel non riuscita."
+      );
+    } finally {
+      setEsportazioneExcel(false);
+    }
+  }
+
   return (
     <LayoutApp>
       <EconomiaAccessGuard>
@@ -466,8 +501,20 @@ export default function EconomiaCommessePage() {
                   <EconomicCard title="Seleziona una commessa"><EmptyState>Scegli una commessa dalla lista.</EmptyState></EconomicCard>
                 ) : (
                   <>
-                    <div className="overflow-x-auto rounded-2xl border border-white bg-white p-2 shadow-[0_8px_24px_rgba(15,23,42,0.06)]" role="tablist" aria-label="Sezioni gestione economica">
-                      <div className="flex min-w-max gap-1">{TABS.map((item) => <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} onClick={() => setTab(item.id)} className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition cursor-pointer ${tab === item.id ? "bg-[#2B2F5E] text-white" : "text-[#2B2F5E] hover:bg-[#F2F2F2]"}`}>{item.label}</button>)}</div>
+                    <div className="overflow-x-auto rounded-2xl border border-white bg-white p-2 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+                      <div className="flex min-w-max w-full items-center justify-between gap-4">
+                        <div className="flex gap-1" role="tablist" aria-label="Sezioni gestione economica">{TABS.map((item) => <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} onClick={() => setTab(item.id)} className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition cursor-pointer ${tab === item.id ? "bg-[#2B2F5E] text-white" : "text-[#2B2F5E] hover:bg-[#F2F2F2]"}`}>{item.label}</button>)}</div>
+                        <button
+                          type="button"
+                          onClick={() => void esportaCommessa()}
+                          disabled={caricamentoWorkspace || esportazioneExcel}
+                          className="ml-auto inline-flex items-center gap-2 rounded-xl bg-[#5DB642] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#4DA035] disabled:cursor-not-allowed disabled:opacity-55"
+                          aria-label="Esporta tutti i dati della commessa in Excel"
+                        >
+                          <AppIcon name="download" size={17} />
+                          {esportazioneExcel ? "Esportazione..." : "Esporta Excel"}
+                        </button>
+                      </div>
                     </div>
 
                     {caricamentoWorkspace ? <div className="rounded-2xl bg-white p-8 text-center text-sm text-gray-500">Aggiornamento dati...</div> : (
