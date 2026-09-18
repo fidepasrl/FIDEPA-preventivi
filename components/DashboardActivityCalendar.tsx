@@ -271,9 +271,9 @@ export default function DashboardActivityCalendar({
                     background: getSfondoAttivita(barra.item),
                     textShadow: "0 1px 1px rgba(0, 0, 0, 0.35)",
                   }}
-                  title={`${barra.partecipanti} - ${barra.titoloCommessa} - ${barra.item.titolo}`}
+                  title={`${barra.partecipanti} - ${barra.item.titolo}`}
                 >
-                  <span className="truncate">{barra.titoloCommessa}</span>
+                  <span className="truncate">{barra.item.titolo}</span>
                 </div>
               );
             })

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import LayoutApp from "@/components/LayoutApp";
 import AppIcon from "@/components/AppIcon";
+import { intervalloSettimana } from "@/lib/email-settimanale";
 import { supabase } from "@/lib/supabase";
 import { getSimboloTipoCommessa } from "@/lib/tipiCommesse";
 
@@ -100,6 +101,12 @@ type SegmentoCalendario = {
   riga: number;
 };
 
+type SettimanaEmail = {
+  numero: number;
+  dataInizio: string;
+  dataFine: string;
+};
+
 const FORM_INIZIALE = {
   titolo: "",
   commessa_id: "",
@@ -120,7 +127,7 @@ const FORM_APPUNTAMENTO_INIZIALE = {
 };
 
 const COLONNE_CALENDARIO =
-  "44px repeat(5, minmax(0, 1fr)) 44px 44px";
+  "64px repeat(5, minmax(0, 1fr)) 44px 44px";
 const COLONNE_GIORNI_CALENDARIO = "repeat(5, minmax(0, 1fr)) 44px 44px";
 const MESI_ANNO = [
   "Gennaio",
@@ -196,6 +203,12 @@ export default function CalendarioAttivitaPage() {
   const [appuntamentoInModifica, setAppuntamentoInModifica] =
     useState<Appuntamento | null>(null);
   const [salvataggioAppuntamento, setSalvataggioAppuntamento] = useState(false);
+  const [settimanaEmail, setSettimanaEmail] =
+    useState<SettimanaEmail | null>(null);
+  const [destinatarioEmail, setDestinatarioEmail] = useState("tutti");
+  const [invioEmailSettimana, setInvioEmailSettimana] = useState(false);
+  const [esitoEmailSettimana, setEsitoEmailSettimana] = useState("");
+  const [erroreEmailSettimana, setErroreEmailSettimana] = useState("");
 
   const [caricamento, setCaricamento] = useState(true);
   const [selettoreMeseAperto, setSelettoreMeseAperto] = useState(false);
@@ -905,6 +918,15 @@ export default function CalendarioAttivitaPage() {
     return `${annoData}-${meseData}-${giornoData}`;
   }
 
+  function formattaDataCalendario(value: string) {
+    const [annoData, meseData, giornoData] = value.split("-").map(Number);
+    return new Intl.DateTimeFormat("it-IT", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }).format(new Date(annoData, meseData - 1, giornoData, 12));
+  }
+
   function getNumeroSettimana(data: Date) {
     const dataUtc = new Date(
       Date.UTC(data.getFullYear(), data.getMonth(), data.getDate())
@@ -926,6 +948,81 @@ export default function CalendarioAttivitaPage() {
     );
 
     return primoGiorno ? getNumeroSettimana(primoGiorno) : null;
+  }
+
+  function apriInvioEmailSettimana(
+    settimana: (Date | null)[],
+    numeroSettimana: number
+  ) {
+    const primoGiorno = settimana.find(
+      (giorno): giorno is Date => Boolean(giorno)
+    );
+    if (!primoGiorno) return;
+    const intervallo = intervalloSettimana(getChiaveData(primoGiorno));
+    setSettimanaEmail({
+      numero: numeroSettimana,
+      dataInizio: intervallo.dataInizio,
+      dataFine: intervallo.dataFine,
+    });
+    setDestinatarioEmail("tutti");
+    setEsitoEmailSettimana("");
+    setErroreEmailSettimana("");
+  }
+
+  async function inviaEmailDellaSettimana() {
+    if (!settimanaEmail) return;
+    setInvioEmailSettimana(true);
+    setEsitoEmailSettimana("");
+    setErroreEmailSettimana("");
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) throw new Error("Sessione non valida.");
+
+      const response = await fetch("/api/attivita/riepilogo-settimanale", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          dataInizioSettimana: settimanaEmail.dataInizio,
+          personaId:
+            destinatarioEmail === "tutti" ? null : destinatarioEmail,
+        }),
+      });
+      const risultato = (await response.json()) as {
+        error?: string;
+        inviate?: number;
+        senzaEmail?: number;
+        fallite?: number;
+        destinatari?: string[];
+      };
+      if (!response.ok) {
+        throw new Error(
+          risultato.error ||
+            `${risultato.fallite || 0} email non sono state consegnate.`
+        );
+      }
+
+      const dettagli = [
+        `${risultato.inviate || 0} email inviate`,
+        risultato.senzaEmail
+          ? `${risultato.senzaEmail} persone senza email`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      setEsitoEmailSettimana(dettagli);
+    } catch (error) {
+      setErroreEmailSettimana(
+        error instanceof Error ? error.message : "Invio non riuscito."
+      );
+    } finally {
+      setInvioEmailSettimana(false);
+    }
   }
 
   function getGiorniLavorativiAttivita(item: Attivita) {
@@ -1268,11 +1365,27 @@ export default function CalendarioAttivitaPage() {
                         minHeight: altezzaSettimana,
                       }}
                     >
-                      <div className="flex items-center justify-center overflow-hidden border-r border-b border-gray-200 bg-[#FAFAFA] text-[#2B2F5E]">
+                      <div className="relative z-30 flex flex-col items-center justify-center gap-2 overflow-hidden border-r border-b border-gray-200 bg-[#FAFAFA] text-[#2B2F5E]">
                         {numeroSettimana && (
-                          <span className="block rotate-90 text-[28px] font-semibold leading-none">
-                            {numeroSettimana}
-                          </span>
+                          <>
+                            <span className="text-[13px] font-bold leading-none">
+                              W{numeroSettimana}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                apriInvioEmailSettimana(
+                                  settimana,
+                                  numeroSettimana
+                                )
+                              }
+                              className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#2B2F5E]/10 bg-white text-[#2D80B3] shadow-sm hover:border-[#5E9AD3] hover:bg-[#5E9AD3]/10"
+                              title={`Invia o reinvia il riepilogo della week ${numeroSettimana}`}
+                              aria-label={`Invia o reinvia le email della week ${numeroSettimana}`}
+                            >
+                              <AppIcon name="mail" size={15} />
+                            </button>
+                          </>
                         )}
                       </div>
 
@@ -1431,6 +1544,111 @@ export default function CalendarioAttivitaPage() {
           ))}
         </div>
       </div>
+
+      {settimanaEmail && (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-[#2B2F5E]/45 p-4 backdrop-blur-sm">
+          <div
+            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="titolo-email-settimanale"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#5E9AD3]/12 text-[#2D80B3]">
+                  <AppIcon name="mail" size={20} />
+                </span>
+                <div>
+                  <h2
+                    id="titolo-email-settimanale"
+                    className="text-lg font-semibold text-[#2B2F5E]"
+                  >
+                    Invia riepilogo Week {settimanaEmail.numero}
+                  </h2>
+                  <p className="mt-1 text-sm leading-relaxed text-gray-500">
+                    Programmazione dal{" "}
+                    {formattaDataCalendario(settimanaEmail.dataInizio)} al{" "}
+                    {formattaDataCalendario(settimanaEmail.dataFine)}.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSettimanaEmail(null)}
+                className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-400 hover:bg-[#F2F2F2] hover:text-[#2B2F5E]"
+                aria-label="Chiudi invio email settimanale"
+              >
+                <AppIcon name="x" size={18} />
+              </button>
+            </div>
+
+            <div className="mt-5 rounded-xl border border-[#2B2F5E]/10 bg-[#F8F9FB] p-4">
+              <label className="block text-sm font-semibold text-[#2B2F5E]">
+                Destinatario
+                <select
+                  value={destinatarioEmail}
+                  onChange={(event) =>
+                    setDestinatarioEmail(event.target.value)
+                  }
+                  className="mt-2 min-h-11 w-full rounded-xl border border-[#2B2F5E]/15 bg-white px-3.5 py-2.5 text-sm text-[#2B2F5E] outline-none focus:border-[#5E9AD3] focus:ring-2 focus:ring-[#5E9AD3]/15"
+                >
+                  <option value="tutti">Tutto il personale attivo</option>
+                  {personale.map((persona) => (
+                    <option
+                      key={persona.id}
+                      value={persona.id}
+                      disabled={!persona.email?.trim()}
+                    >
+                      {persona.nome}
+                      {!persona.email?.trim() ? " — email non configurata" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="mt-3 text-xs leading-5 text-[#2B2F5E]/55">
+                L’email contiene attività e appuntamenti della settimana,
+                seguiti da ruolo, compiti e responsabilità della persona.
+              </p>
+            </div>
+
+            {esitoEmailSettimana && (
+              <p
+                className="mt-4 rounded-xl bg-[#64B445]/12 px-4 py-3 text-sm font-semibold text-[#4D9634]"
+                role="status"
+              >
+                {esitoEmailSettimana}
+              </p>
+            )}
+            {erroreEmailSettimana && (
+              <p
+                className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-600"
+                role="alert"
+              >
+                {erroreEmailSettimana}
+              </p>
+            )}
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSettimanaEmail(null)}
+                className="min-h-11 rounded-xl border border-[#2B2F5E]/15 bg-white px-4 text-sm font-semibold text-[#2B2F5E] hover:bg-[#F2F2F2]"
+              >
+                Chiudi
+              </button>
+              <button
+                type="button"
+                onClick={inviaEmailDellaSettimana}
+                disabled={invioEmailSettimana}
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#64B445] px-4 text-sm font-semibold text-white hover:bg-[#579F3B] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <AppIcon name="mail" size={16} />
+                {invioEmailSettimana ? "Invio in corso..." : "Invia / reinvia"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modaleAperta && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6">
